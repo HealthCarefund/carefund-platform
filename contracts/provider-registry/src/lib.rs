@@ -413,4 +413,158 @@ impl ProviderRegistryContract {
             ActorStatus::Revoked => Err(RegistryError::ProviderAlreadyRevoked),
         }
     }
+
+    /// Register a new attester bound to a specific provider. Requires admin authorization.
+    pub fn register_attester(
+        env: Env,
+        attester: Address,
+        provider: Address,
+        credential_ref: BytesN<32>,
+    ) -> Result<(), RegistryError> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(RegistryError::Unauthorized)?;
+        admin.require_auth();
+
+        // Check provider exists and is Active
+        let provider_key = DataKey::Provider(provider.clone());
+        let provider_record: ProviderRecord = env
+            .storage()
+            .persistent()
+            .get(&provider_key)
+            .ok_or(RegistryError::ProviderNotFound)?;
+
+        if provider_record.status != ActorStatus::Active {
+            return Err(RegistryError::ProviderNotActive);
+        }
+
+        // Check attester doesn't already exist
+        let attester_key = DataKey::Attester(attester.clone());
+        if env.storage().persistent().has(&attester_key) {
+            return Err(RegistryError::AttesterAlreadyExists);
+        }
+
+        let record = AttesterRecord {
+            provider,
+            status: ActorStatus::Active,
+            credential_ref,
+        };
+
+        env.storage().persistent().set(&attester_key, &record);
+        env.storage().persistent().extend_ttl(
+            &attester_key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        env.events().publish((symbol_short!("att_reg"),), attester);
+
+        Ok(())
+    }
+
+    /// Suspend an active attester. Requires admin authorization.
+    pub fn suspend_attester(env: Env, attester: Address) -> Result<(), RegistryError> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(RegistryError::Unauthorized)?;
+        admin.require_auth();
+
+        let key = DataKey::Attester(attester.clone());
+        let mut record: AttesterRecord = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(RegistryError::AttesterNotFound)?;
+
+        match record.status {
+            ActorStatus::Active => {
+                record.status = ActorStatus::Suspended;
+                env.storage().persistent().set(&key, &record);
+                env.storage().persistent().extend_ttl(
+                    &key,
+                    PERSISTENT_TTL_THRESHOLD,
+                    PERSISTENT_TTL_EXTEND_TO,
+                );
+
+                env.events().publish((symbol_short!("att_sus"),), attester);
+
+                Ok(())
+            }
+            ActorStatus::Suspended => Err(RegistryError::AttesterAlreadySuspended),
+            ActorStatus::Revoked => Err(RegistryError::AttesterAlreadyRevoked),
+        }
+    }
+
+    /// Reinstate a suspended attester. Requires admin authorization.
+    pub fn reinstate_attester(env: Env, attester: Address) -> Result<(), RegistryError> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(RegistryError::Unauthorized)?;
+        admin.require_auth();
+
+        let key = DataKey::Attester(attester.clone());
+        let mut record: AttesterRecord = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(RegistryError::AttesterNotFound)?;
+
+        match record.status {
+            ActorStatus::Suspended => {
+                record.status = ActorStatus::Active;
+                env.storage().persistent().set(&key, &record);
+                env.storage().persistent().extend_ttl(
+                    &key,
+                    PERSISTENT_TTL_THRESHOLD,
+                    PERSISTENT_TTL_EXTEND_TO,
+                );
+
+                env.events().publish((symbol_short!("att_rei"),), attester);
+
+                Ok(())
+            }
+            ActorStatus::Active => Err(RegistryError::AttesterAlreadyActive),
+            ActorStatus::Revoked => Err(RegistryError::AttesterAlreadyRevoked),
+        }
+    }
+
+    /// Revoke an attester (terminal operation). Requires admin authorization.
+    pub fn revoke_attester(env: Env, attester: Address) -> Result<(), RegistryError> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(RegistryError::Unauthorized)?;
+        admin.require_auth();
+
+        let key = DataKey::Attester(attester.clone());
+        let mut record: AttesterRecord = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(RegistryError::AttesterNotFound)?;
+
+        match record.status {
+            ActorStatus::Active | ActorStatus::Suspended => {
+                record.status = ActorStatus::Revoked;
+                env.storage().persistent().set(&key, &record);
+                env.storage().persistent().extend_ttl(
+                    &key,
+                    PERSISTENT_TTL_THRESHOLD,
+                    PERSISTENT_TTL_EXTEND_TO,
+                );
+
+                env.events().publish((symbol_short!("att_rev"),), attester);
+
+                Ok(())
+            }
+            ActorStatus::Revoked => Err(RegistryError::AttesterAlreadyRevoked),
+        }
+    }
 }

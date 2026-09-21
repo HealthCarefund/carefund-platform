@@ -271,3 +271,195 @@ fn test_revoke_suspended_provider() {
 
     assert!(!client.is_provider_active(&provider));
 }
+
+// ---------------------------------------------------------------------------
+// Attester Lifecycle Tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_register_attester() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+
+    let res = client.try_register_attester(&attester, &provider, &credential_ref);
+    assert!(res.is_ok());
+
+    // Check authorization query
+    assert!(client.check_attester(&attester, &provider));
+
+    // Check get_attester
+    let record = client.get_attester(&attester).unwrap();
+    assert_eq!(record.provider, provider);
+    assert_eq!(record.credential_ref, credential_ref);
+}
+
+#[test]
+fn test_register_attester_inactive_provider_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    client.register_provider(&provider, &provider_ref);
+    client.suspend_provider(&provider);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+
+    let res = client.try_register_attester(&attester, &provider, &credential_ref);
+    assert_eq!(res, Err(Ok(RegistryError::ProviderNotActive)));
+}
+
+#[test]
+fn test_register_attester_nonexistent_provider_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin);
+
+    let nonexistent_provider = Address::generate(&env);
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+
+    let res = client.try_register_attester(&attester, &nonexistent_provider, &credential_ref);
+    assert_eq!(res, Err(Ok(RegistryError::ProviderNotFound)));
+}
+
+#[test]
+fn test_register_attester_duplicate_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.register_attester(&attester, &provider, &credential_ref);
+
+    let res = client.try_register_attester(&attester, &provider, &credential_ref);
+    assert_eq!(res, Err(Ok(RegistryError::AttesterAlreadyExists)));
+}
+
+#[test]
+fn test_suspend_reinstate_revoke_attester() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    client.register_attester(&attester, &provider, &credential_ref);
+
+    assert!(client.check_attester(&attester, &provider));
+
+    // Suspend attester
+    let res = client.try_suspend_attester(&attester);
+    assert!(res.is_ok());
+    assert!(!client.check_attester(&attester, &provider));
+
+    // Suspend again fails
+    assert_eq!(
+        client.try_suspend_attester(&attester),
+        Err(Ok(RegistryError::AttesterAlreadySuspended))
+    );
+
+    // Reinstate attester
+    let res = client.try_reinstate_attester(&attester);
+    assert!(res.is_ok());
+    assert!(client.check_attester(&attester, &provider));
+
+    // Reinstate again fails
+    assert_eq!(
+        client.try_reinstate_attester(&attester),
+        Err(Ok(RegistryError::AttesterAlreadyActive))
+    );
+
+    // Revoke attester
+    let res = client.try_revoke_attester(&attester);
+    assert!(res.is_ok());
+    assert!(!client.check_attester(&attester, &provider));
+
+    // Revoked attester cannot be reinstated
+    assert_eq!(
+        client.try_reinstate_attester(&attester),
+        Err(Ok(RegistryError::AttesterAlreadyRevoked))
+    );
+
+    // Revoking again fails
+    assert_eq!(
+        client.try_revoke_attester(&attester),
+        Err(Ok(RegistryError::AttesterAlreadyRevoked))
+    );
+}
+
+#[test]
+fn test_check_attester_wrong_provider() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin);
+
+    let provider1 = Address::generate(&env);
+    let provider2 = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    client.register_provider(&provider1, &provider_ref);
+    client.register_provider(&provider2, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    client.register_attester(&attester, &provider1, &credential_ref);
+
+    // Bound to provider1, should be false for provider2
+    assert!(client.check_attester(&attester, &provider1));
+    assert!(!client.check_attester(&attester, &provider2));
+}
+
+#[test]
+fn test_check_attester_when_provider_suspended() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    client.register_attester(&attester, &provider, &credential_ref);
+
+    assert!(client.check_attester(&attester, &provider));
+
+    // Suspend provider -> check_attester should return false even though attester is Active
+    client.suspend_provider(&provider);
+    assert!(!client.check_attester(&attester, &provider));
+}
