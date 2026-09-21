@@ -263,4 +263,154 @@ impl ProviderRegistryContract {
             None
         }
     }
+
+    /// Register a new provider. Requires admin authorization.
+    pub fn register_provider(
+        env: Env,
+        provider: Address,
+        provider_ref: BytesN<32>,
+    ) -> Result<(), RegistryError> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(RegistryError::Unauthorized)?;
+        admin.require_auth();
+
+        let key = DataKey::Provider(provider.clone());
+
+        // Check if provider already exists
+        if let Some(existing) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, ProviderRecord>(&key)
+        {
+            return match existing.status {
+                ActorStatus::Active | ActorStatus::Suspended => {
+                    Err(RegistryError::ProviderAlreadyExists)
+                }
+                ActorStatus::Revoked => Err(RegistryError::ProviderAlreadyRevoked),
+            };
+        }
+
+        let record = ProviderRecord {
+            status: ActorStatus::Active,
+            provider_ref,
+        };
+
+        env.storage().persistent().set(&key, &record);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        env.events().publish((symbol_short!("prov_reg"),), provider);
+
+        Ok(())
+    }
+
+    /// Suspend an active provider. Requires admin authorization.
+    pub fn suspend_provider(env: Env, provider: Address) -> Result<(), RegistryError> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(RegistryError::Unauthorized)?;
+        admin.require_auth();
+
+        let key = DataKey::Provider(provider.clone());
+        let mut record: ProviderRecord = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(RegistryError::ProviderNotFound)?;
+
+        match record.status {
+            ActorStatus::Active => {
+                record.status = ActorStatus::Suspended;
+                env.storage().persistent().set(&key, &record);
+                env.storage().persistent().extend_ttl(
+                    &key,
+                    PERSISTENT_TTL_THRESHOLD,
+                    PERSISTENT_TTL_EXTEND_TO,
+                );
+
+                env.events().publish((symbol_short!("prov_sus"),), provider);
+
+                Ok(())
+            }
+            ActorStatus::Suspended => Err(RegistryError::ProviderAlreadySuspended),
+            ActorStatus::Revoked => Err(RegistryError::ProviderAlreadyRevoked),
+        }
+    }
+
+    /// Reinstate a suspended provider. Requires admin authorization.
+    pub fn reinstate_provider(env: Env, provider: Address) -> Result<(), RegistryError> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(RegistryError::Unauthorized)?;
+        admin.require_auth();
+
+        let key = DataKey::Provider(provider.clone());
+        let mut record: ProviderRecord = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(RegistryError::ProviderNotFound)?;
+
+        match record.status {
+            ActorStatus::Suspended => {
+                record.status = ActorStatus::Active;
+                env.storage().persistent().set(&key, &record);
+                env.storage().persistent().extend_ttl(
+                    &key,
+                    PERSISTENT_TTL_THRESHOLD,
+                    PERSISTENT_TTL_EXTEND_TO,
+                );
+
+                env.events().publish((symbol_short!("prov_rei"),), provider);
+
+                Ok(())
+            }
+            ActorStatus::Active => Err(RegistryError::ProviderAlreadyActive),
+            ActorStatus::Revoked => Err(RegistryError::ProviderAlreadyRevoked),
+        }
+    }
+
+    /// Revoke a provider (terminal operation). Requires admin authorization.
+    pub fn revoke_provider(env: Env, provider: Address) -> Result<(), RegistryError> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(RegistryError::Unauthorized)?;
+        admin.require_auth();
+
+        let key = DataKey::Provider(provider.clone());
+        let mut record: ProviderRecord = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(RegistryError::ProviderNotFound)?;
+
+        match record.status {
+            ActorStatus::Active | ActorStatus::Suspended => {
+                record.status = ActorStatus::Revoked;
+                env.storage().persistent().set(&key, &record);
+                env.storage().persistent().extend_ttl(
+                    &key,
+                    PERSISTENT_TTL_THRESHOLD,
+                    PERSISTENT_TTL_EXTEND_TO,
+                );
+
+                env.events().publish((symbol_short!("prov_rev"),), provider);
+
+                Ok(())
+            }
+            ActorStatus::Revoked => Err(RegistryError::ProviderAlreadyRevoked),
+        }
+    }
 }
