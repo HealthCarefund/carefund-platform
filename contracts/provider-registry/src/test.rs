@@ -463,3 +463,133 @@ fn test_check_attester_when_provider_suspended() {
     client.suspend_provider(&provider);
     assert!(!client.check_attester(&attester, &provider));
 }
+
+// ---------------------------------------------------------------------------
+// Authorization Boundary Tests (Commit 6)
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic(expected = "HostError")]
+fn test_unauthorized_initialize_fails() {
+    let env = Env::default();
+    // Do not call env.mock_all_auths() -> require_auth will panic
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin);
+}
+
+#[test]
+#[should_panic(expected = "HostError")]
+fn test_unauthorized_register_provider_fails() {
+    let env = Env::default();
+    let (client, admin) = create_client(&env);
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // Create new client without mocked auth
+    let unauth_env = Env::default();
+    let contract_id = unauth_env.register(ProviderRegistryContract, ());
+    let unauth_client = ProviderRegistryContractClient::new(&unauth_env, &contract_id);
+    unauth_client.initialize(&admin);
+
+    let provider = Address::generate(&unauth_env);
+    let provider_ref = BytesN::from_array(&unauth_env, &[1u8; 32]);
+    unauth_client.register_provider(&provider, &provider_ref);
+}
+
+#[test]
+#[should_panic(expected = "HostError")]
+fn test_unauthorized_register_attester_fails() {
+    let env = Env::default();
+    let (client, admin) = create_client(&env);
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    client.register_provider(&provider, &provider_ref);
+
+    let unauth_env = Env::default();
+    let contract_id = unauth_env.register(ProviderRegistryContract, ());
+    let unauth_client = ProviderRegistryContractClient::new(&unauth_env, &contract_id);
+    unauth_client.initialize(&admin);
+
+    let attester = Address::generate(&unauth_env);
+    let credential_ref = BytesN::from_array(&unauth_env, &[2u8; 32]);
+    unauth_client.register_attester(&attester, &provider, &credential_ref);
+}
+
+#[test]
+#[should_panic(expected = "HostError")]
+fn test_unauthorized_suspend_provider_fails() {
+    let env = Env::default();
+    let (client, admin) = create_client(&env);
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    client.register_provider(&provider, &provider_ref);
+
+    let unauth_env = Env::default();
+    let contract_id = unauth_env.register(ProviderRegistryContract, ());
+    let unauth_client = ProviderRegistryContractClient::new(&unauth_env, &contract_id);
+    unauth_client.initialize(&admin);
+
+    unauth_client.suspend_provider(&provider);
+}
+
+#[test]
+fn test_revoked_provider_disables_all_attesters() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    client.register_provider(&provider, &provider_ref);
+
+    let attester1 = Address::generate(&env);
+    let attester2 = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    client.register_attester(&attester1, &provider, &credential_ref);
+    client.register_attester(&attester2, &provider, &credential_ref);
+
+    assert!(client.check_attester(&attester1, &provider));
+    assert!(client.check_attester(&attester2, &provider));
+
+    // Revoke provider
+    client.revoke_provider(&provider);
+
+    // Both attesters are no longer valid for this provider
+    assert!(!client.check_attester(&attester1, &provider));
+    assert!(!client.check_attester(&attester2, &provider));
+
+    // Cannot register new attester for revoked provider
+    let attester3 = Address::generate(&env);
+    let res = client.try_register_attester(&attester3, &provider, &credential_ref);
+    assert_eq!(res, Err(Ok(RegistryError::ProviderNotActive)));
+}
+
+#[test]
+fn test_revoked_attester_check_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    client.register_attester(&attester, &provider, &credential_ref);
+
+    assert!(client.check_attester(&attester, &provider));
+
+    client.revoke_attester(&attester);
+    assert!(!client.check_attester(&attester, &provider));
+}
