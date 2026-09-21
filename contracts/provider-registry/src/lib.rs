@@ -7,7 +7,23 @@
 
 mod test;
 
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, BytesN};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
+};
+
+// ---------------------------------------------------------------------------
+// Constants / TTL configuration
+// ---------------------------------------------------------------------------
+
+/// Minimum ledger threshold before extending instance TTL (~7 days at 5s/ledger).
+pub const INSTANCE_TTL_THRESHOLD: u32 = 120_960;
+/// Amount of ledgers to extend instance TTL to (~30 days at 5s/ledger).
+pub const INSTANCE_TTL_EXTEND_TO: u32 = 518_400;
+
+/// Minimum ledger threshold before extending persistent entry TTL (~7 days).
+pub const PERSISTENT_TTL_THRESHOLD: u32 = 120_960;
+/// Amount of ledgers to extend persistent entry TTL to (~30 days).
+pub const PERSISTENT_TTL_EXTEND_TO: u32 = 518_400;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -79,11 +95,172 @@ pub enum RegistryError {
 }
 
 // ---------------------------------------------------------------------------
-// Contract
+// Contract Interface
+// ---------------------------------------------------------------------------
+
+pub trait ProviderRegistryTrait {
+    /// Initialize the contract with an admin address. Callable only once.
+    fn initialize(env: Env, admin: Address) -> Result<(), RegistryError>;
+
+    /// Read the admin address.
+    fn get_admin(env: Env) -> Result<Address, RegistryError>;
+
+    /// Check if a provider exists and is currently Active.
+    fn is_provider_active(env: Env, provider: Address) -> bool;
+
+    /// Check if an attester is Active and bound to an Active provider.
+    /// Returns true only when: attester exists, is Active, provider exists,
+    /// is Active, and attester.provider == provider.
+    fn check_attester(env: Env, attester: Address, provider: Address) -> bool;
+
+    /// Read a provider's full record.
+    fn get_provider(env: Env, provider: Address) -> Option<ProviderRecord>;
+
+    /// Read an attester's full record.
+    fn get_attester(env: Env, attester: Address) -> Option<AttesterRecord>;
+}
+
+// ---------------------------------------------------------------------------
+// Contract Implementation
 // ---------------------------------------------------------------------------
 
 #[contract]
 pub struct ProviderRegistryContract;
 
 #[contractimpl]
-impl ProviderRegistryContract {}
+impl ProviderRegistryContract {
+    /// Initialize the contract with an admin address. Callable only once.
+    pub fn initialize(env: Env, admin: Address) -> Result<(), RegistryError> {
+        if env.storage().instance().has(&DataKey::Admin) {
+            return Err(RegistryError::AlreadyInitialized);
+        }
+
+        admin.require_auth();
+
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+
+        env.events().publish((symbol_short!("init"),), admin);
+
+        Ok(())
+    }
+
+    /// Read the admin address.
+    pub fn get_admin(env: Env) -> Result<Address, RegistryError> {
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(RegistryError::Unauthorized)
+    }
+
+    /// Check if a provider exists and is currently Active.
+    pub fn is_provider_active(env: Env, provider: Address) -> bool {
+        let key = DataKey::Provider(provider);
+        if let Some(record) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, ProviderRecord>(&key)
+        {
+            env.storage().persistent().extend_ttl(
+                &key,
+                PERSISTENT_TTL_THRESHOLD,
+                PERSISTENT_TTL_EXTEND_TO,
+            );
+            record.status == ActorStatus::Active
+        } else {
+            false
+        }
+    }
+
+    /// Check if an attester is Active and bound to an Active provider.
+    /// Returns true only when: attester exists, is Active, provider exists,
+    /// is Active, and attester.provider == provider.
+    pub fn check_attester(env: Env, attester: Address, provider: Address) -> bool {
+        let attester_key = DataKey::Attester(attester);
+        let attester_record: AttesterRecord = match env
+            .storage()
+            .persistent()
+            .get::<DataKey, AttesterRecord>(&attester_key)
+        {
+            Some(r) => {
+                env.storage().persistent().extend_ttl(
+                    &attester_key,
+                    PERSISTENT_TTL_THRESHOLD,
+                    PERSISTENT_TTL_EXTEND_TO,
+                );
+                r
+            }
+            None => return false,
+        };
+
+        if attester_record.status != ActorStatus::Active {
+            return false;
+        }
+
+        if attester_record.provider != provider {
+            return false;
+        }
+
+        let provider_key = DataKey::Provider(provider);
+        let provider_record: ProviderRecord = match env
+            .storage()
+            .persistent()
+            .get::<DataKey, ProviderRecord>(&provider_key)
+        {
+            Some(r) => {
+                env.storage().persistent().extend_ttl(
+                    &provider_key,
+                    PERSISTENT_TTL_THRESHOLD,
+                    PERSISTENT_TTL_EXTEND_TO,
+                );
+                r
+            }
+            None => return false,
+        };
+
+        provider_record.status == ActorStatus::Active
+    }
+
+    /// Read a provider's full record.
+    pub fn get_provider(env: Env, provider: Address) -> Option<ProviderRecord> {
+        let key = DataKey::Provider(provider);
+        if let Some(record) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, ProviderRecord>(&key)
+        {
+            env.storage().persistent().extend_ttl(
+                &key,
+                PERSISTENT_TTL_THRESHOLD,
+                PERSISTENT_TTL_EXTEND_TO,
+            );
+            Some(record)
+        } else {
+            None
+        }
+    }
+
+    /// Read an attester's full record.
+    pub fn get_attester(env: Env, attester: Address) -> Option<AttesterRecord> {
+        let key = DataKey::Attester(attester);
+        if let Some(record) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, AttesterRecord>(&key)
+        {
+            env.storage().persistent().extend_ttl(
+                &key,
+                PERSISTENT_TTL_THRESHOLD,
+                PERSISTENT_TTL_EXTEND_TO,
+            );
+            Some(record)
+        } else {
+            None
+        }
+    }
+}
