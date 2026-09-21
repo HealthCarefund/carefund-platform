@@ -693,4 +693,76 @@ impl CareAgreementContract {
 
         Ok(())
     }
+
+    /// Settle an agreement by transferring settlement amount to provider.
+    /// Requires sponsor authorization.
+    /// Transitions state from CareConfirmed to Settled.
+    /// Transfers settlement_amount from contract to provider.
+    pub fn settle(env: Env, agreement_id: u64, sponsor: Address) -> Result<(), AgreementError> {
+        sponsor.require_auth();
+
+        // Load agreement
+        let key = DataKey::Agreement(agreement_id);
+        let mut agreement: Agreement = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(AgreementError::AgreementNotFound)?;
+
+        // Validate state is CareConfirmed
+        if agreement.state != AgreementState::CareConfirmed {
+            return Err(AgreementError::InvalidState);
+        }
+
+        // Validate sponsor matches
+        if agreement.sponsor != sponsor {
+            return Err(AgreementError::Unauthorized);
+        }
+
+        // Validate current time is past care deadline
+        let current_time = env.ledger().timestamp();
+        if current_time <= agreement.care_deadline {
+            return Err(AgreementError::CareDeadlineNotPassed);
+        }
+
+        // Load settlement asset (token contract address)
+        let settlement_asset: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::SettlementAsset)
+            .ok_or(AgreementError::Unauthorized)?;
+
+        // Transfer settlement amount from contract to provider
+        use soroban_sdk::IntoVal;
+        env.invoke_contract::<()>(
+            &settlement_asset,
+            &soroban_sdk::Symbol::new(&env, "transfer"),
+            soroban_sdk::Vec::from_array(
+                &env,
+                [
+                    env.current_contract_address().into_val(&env),
+                    agreement.provider.clone().into_val(&env),
+                    agreement.settlement_amount.into_val(&env),
+                ],
+            ),
+        );
+
+        // Update agreement state to Settled
+        agreement.state = AgreementState::Settled;
+        env.storage().persistent().set(&key, &agreement);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+
+        env.events()
+            .publish((symbol_short!("agr_set"),), agreement_id);
+
+        Ok(())
+    }
 }
