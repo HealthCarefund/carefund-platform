@@ -240,4 +240,150 @@ impl CareAgreementContract {
             .get(&DataKey::SettlementAsset)
             .ok_or(AgreementError::Unauthorized)
     }
+
+    /// Create a new care funding agreement.
+    /// Requires provider authorization.
+    pub fn create_agreement(
+        env: Env,
+        provider: Address,
+        sponsor: Address,
+        attester: Address,
+        patient_ref_commitment: BytesN<32>,
+        service_commitment: BytesN<32>,
+        funding_amount: i128,
+        settlement_amount: i128,
+        funding_deadline: u64,
+        care_deadline: u64,
+        dispute_window_secs: u64,
+    ) -> Result<u64, AgreementError> {
+        provider.require_auth();
+
+        // Load registry and asset
+        let provider_registry: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProviderRegistry)
+            .ok_or(AgreementError::Unauthorized)?;
+
+        let _settlement_asset: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::SettlementAsset)
+            .ok_or(AgreementError::Unauthorized)?;
+
+        // Validate amounts
+        if funding_amount <= 0 || settlement_amount <= 0 {
+            return Err(AgreementError::InvalidAmount);
+        }
+        if settlement_amount > funding_amount {
+            return Err(AgreementError::InvalidAmount);
+        }
+
+        let current_time = env.ledger().timestamp();
+
+        // Validate deadlines
+        if funding_deadline <= current_time {
+            return Err(AgreementError::InvalidDeadline);
+        }
+        if care_deadline <= funding_deadline {
+            return Err(AgreementError::InvalidDeadline);
+        }
+
+        // Cross-contract call: check provider is active
+        use soroban_sdk::IntoVal;
+        let is_active: bool = env.invoke_contract(
+            &provider_registry,
+            &soroban_sdk::Symbol::new(&env, "is_provider_active"),
+            soroban_sdk::Vec::from_array(&env, [provider.clone().into_val(&env)]),
+        );
+
+        if !is_active {
+            return Err(AgreementError::ProviderNotActive);
+        }
+
+        // Cross-contract call: check attester is authorized for provider
+        let is_authorized: bool = env.invoke_contract(
+            &provider_registry,
+            &soroban_sdk::Symbol::new(&env, "check_attester"),
+            soroban_sdk::Vec::from_array(
+                &env,
+                [
+                    attester.clone().into_val(&env),
+                    provider.clone().into_val(&env),
+                ],
+            ),
+        );
+
+        if !is_authorized {
+            return Err(AgreementError::AttesterNotAuthorized);
+        }
+
+        // Allocate agreement ID
+        let agreement_id: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::NextAgreementId)
+            .unwrap_or(1u64);
+
+        env.storage()
+            .instance()
+            .set(&DataKey::NextAgreementId, &(agreement_id + 1));
+
+        // Create agreement record
+        let agreement = Agreement {
+            sponsor,
+            provider: provider.clone(),
+            attester,
+            patient_ref_commitment,
+            service_commitment,
+            funding_amount,
+            settlement_amount,
+            funding_deadline,
+            care_deadline,
+            dispute_window_secs,
+            state: AgreementState::Requested,
+            attestation_commitment: None,
+            attested_by: None,
+            attested_at: None,
+            dispute_origin: MaybeDisputeOrigin::None,
+            dispute_opened_by: None,
+            dispute_opened_at: None,
+            created_at: current_time,
+        };
+
+        let key = DataKey::Agreement(agreement_id);
+        env.storage().persistent().set(&key, &agreement);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+
+        env.events()
+            .publish((symbol_short!("agr_cre"),), agreement_id);
+
+        Ok(agreement_id)
+    }
+
+    /// Read an agreement record.
+    pub fn get_agreement(env: Env, agreement_id: u64) -> Result<Agreement, AgreementError> {
+        let key = DataKey::Agreement(agreement_id);
+        let agreement: Agreement = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(AgreementError::AgreementNotFound)?;
+
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        Ok(agreement)
+    }
 }
