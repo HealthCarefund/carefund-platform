@@ -475,4 +475,90 @@ impl CareAgreementContract {
 
         Ok(())
     }
+
+    /// Cancel an agreement in Requested state.
+    /// Requires provider authorization.
+    /// Transitions state from Requested to Cancelled.
+    pub fn cancel(env: Env, agreement_id: u64, provider: Address) -> Result<(), AgreementError> {
+        provider.require_auth();
+
+        // Load agreement
+        let key = DataKey::Agreement(agreement_id);
+        let mut agreement: Agreement = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(AgreementError::AgreementNotFound)?;
+
+        // Validate state is Requested
+        if agreement.state != AgreementState::Requested {
+            return Err(AgreementError::InvalidState);
+        }
+
+        // Validate provider matches
+        if agreement.provider != provider {
+            return Err(AgreementError::Unauthorized);
+        }
+
+        // Update agreement state to Cancelled
+        agreement.state = AgreementState::Cancelled;
+        env.storage().persistent().set(&key, &agreement);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+
+        env.events()
+            .publish((symbol_short!("agr_can"),), agreement_id);
+
+        Ok(())
+    }
+
+    /// Expire an agreement when care deadline has passed.
+    /// Callable by anyone after care deadline.
+    /// Transitions state from Funded or CareConfirmed to Expired.
+    pub fn expire(env: Env, agreement_id: u64) -> Result<(), AgreementError> {
+        // Load agreement
+        let key = DataKey::Agreement(agreement_id);
+        let mut agreement: Agreement = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(AgreementError::AgreementNotFound)?;
+
+        // Validate state is Funded or CareConfirmed
+        if agreement.state != AgreementState::Funded && agreement.state != AgreementState::CareConfirmed
+        {
+            return Err(AgreementError::InvalidState);
+        }
+
+        // Validate care deadline has passed
+        let current_time = env.ledger().timestamp();
+        if current_time <= agreement.care_deadline {
+            return Err(AgreementError::CareDeadlineNotPassed);
+        }
+
+        // Update agreement state to Expired
+        agreement.state = AgreementState::Expired;
+        env.storage().persistent().set(&key, &agreement);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+
+        env.events()
+            .publish((symbol_short!("agr_exp"),), agreement_id);
+
+        Ok(())
+    }
 }
