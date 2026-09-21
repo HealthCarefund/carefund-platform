@@ -621,4 +621,76 @@ impl CareAgreementContract {
 
         Ok(())
     }
+
+    /// Open a dispute on an agreement.
+    /// Requires authorization from sponsor or provider.
+    /// Transitions state from Funded or CareConfirmed to Disputed.
+    /// Records dispute origin state, opener address, and dispute timestamp.
+    pub fn open_dispute(
+        env: Env,
+        agreement_id: u64,
+        opener: Address,
+    ) -> Result<(), AgreementError> {
+        opener.require_auth();
+
+        // Load agreement
+        let key = DataKey::Agreement(agreement_id);
+        let mut agreement: Agreement = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(AgreementError::AgreementNotFound)?;
+
+        // Validate state is Funded or CareConfirmed
+        if agreement.state != AgreementState::Funded && agreement.state != AgreementState::CareConfirmed
+        {
+            return Err(AgreementError::InvalidState);
+        }
+
+        // Validate opener is sponsor or provider
+        if agreement.sponsor != opener && agreement.provider != opener {
+            return Err(AgreementError::Unauthorized);
+        }
+
+        // Validate current time is within dispute window (after care deadline but before dispute window closes)
+        let current_time = env.ledger().timestamp();
+        let dispute_window_end = agreement.care_deadline + agreement.dispute_window_secs;
+
+        if current_time <= agreement.care_deadline {
+            return Err(AgreementError::DisputeWindowActive);
+        }
+        if current_time > dispute_window_end {
+            return Err(AgreementError::DisputeWindowClosed);
+        }
+
+        // Record dispute origin state
+        let origin = match agreement.state {
+            AgreementState::Funded => DisputeOrigin::Funded,
+            AgreementState::CareConfirmed => DisputeOrigin::CareConfirmed,
+            _ => return Err(AgreementError::InvalidState),
+        };
+
+        // Record dispute info
+        agreement.dispute_origin = MaybeDisputeOrigin::Some(origin);
+        agreement.dispute_opened_by = Some(opener.clone());
+        agreement.dispute_opened_at = Some(current_time);
+
+        // Update agreement state to Disputed
+        agreement.state = AgreementState::Disputed;
+        env.storage().persistent().set(&key, &agreement);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+
+        env.events()
+            .publish((symbol_short!("agr_dis"),), agreement_id);
+
+        Ok(())
+    }
 }
