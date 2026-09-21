@@ -3,6 +3,7 @@
 use crate::{AgreementError, AgreementState, CareAgreementContract, CareAgreementContractClient};
 use provider_registry::{ProviderRegistryContract, ProviderRegistryContractClient};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
+use soroban_sdk::testutils::Ledger;
 
 // Bring provider-registry as external crate for testing
 extern crate provider_registry;
@@ -401,4 +402,326 @@ fn test_unauthorized_create_agreement_fails() {
         &(unauth_env.ledger().timestamp() + 172800),
         &3600u64,
     );
+}
+
+// ---------------------------------------------------------------------------
+// Agreement Funding Tests (Commit 11)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_fund_agreement_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup registry
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    // Setup token contract
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin.clone());
+
+    let sponsor = Address::generate(&env);
+
+    // Mint tokens to sponsor via cross-contract invocation
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (1000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
+
+    // Setup care-agreement
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    // Create agreement
+    let patient_ref = BytesN::from_array(&env, &[3u8; 32]);
+    let service_commitment = BytesN::from_array(&env, &[4u8; 32]);
+
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 86400;
+    let care_deadline = funding_deadline + 86400;
+
+    let agreement_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &patient_ref,
+        &service_commitment,
+        &1000_0000000i128,
+        &900_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &3600u64,
+    );
+
+    assert_eq!(agreement_id, 1);
+    let agreement = client.get_agreement(&agreement_id);
+    assert_eq!(agreement.state, AgreementState::Requested);
+
+    // Fund the agreement
+    client.fund(&agreement_id, &sponsor);
+
+    // Verify agreement is now in Funded state
+    let agreement = client.get_agreement(&agreement_id);
+    assert_eq!(agreement.state, AgreementState::Funded);
+}
+
+#[test]
+fn test_fund_agreement_wrong_sponsor_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup registry
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    // Setup care-agreement
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    // Create agreement
+    let sponsor = Address::generate(&env);
+    let patient_ref = BytesN::from_array(&env, &[3u8; 32]);
+    let service_commitment = BytesN::from_array(&env, &[4u8; 32]);
+
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 86400;
+    let care_deadline = funding_deadline + 86400;
+
+    let agreement_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &patient_ref,
+        &service_commitment,
+        &1000_0000000i128,
+        &900_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &3600u64,
+    );
+
+    // Try to fund with wrong sponsor
+    let wrong_sponsor = Address::generate(&env);
+    let res = client.try_fund(&agreement_id, &wrong_sponsor);
+    assert_eq!(res, Err(Ok(AgreementError::Unauthorized)));
+}
+
+#[test]
+fn test_fund_agreement_after_deadline_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup registry
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    // Setup token
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    // Create agreement
+    let sponsor = Address::generate(&env);
+    let patient_ref = BytesN::from_array(&env, &[3u8; 32]);
+    let service_commitment = BytesN::from_array(&env, &[4u8; 32]);
+
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 100; // Very short deadline
+    let care_deadline = funding_deadline + 86400;
+
+    let agreement_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &patient_ref,
+        &service_commitment,
+        &1000_0000000i128,
+        &900_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &3600u64,
+    );
+
+    // Advance time past funding deadline
+    env.ledger().with_mut(|l| {
+        l.timestamp = funding_deadline + 1;
+    });
+
+    // Try to fund after deadline
+    let res = client.try_fund(&agreement_id, &sponsor);
+    assert_eq!(res, Err(Ok(AgreementError::FundingDeadlineNotPassed)));
+}
+
+#[test]
+fn test_fund_agreement_inactive_provider_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup registry
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    // Setup care-agreement
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    // Create agreement
+    let sponsor = Address::generate(&env);
+    let patient_ref = BytesN::from_array(&env, &[3u8; 32]);
+    let service_commitment = BytesN::from_array(&env, &[4u8; 32]);
+
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 86400;
+    let care_deadline = funding_deadline + 86400;
+
+    let agreement_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &patient_ref,
+        &service_commitment,
+        &1000_0000000i128,
+        &900_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &3600u64,
+    );
+
+    // Suspend provider after agreement creation
+    registry_client.suspend_provider(&provider);
+
+    // Try to fund when provider is inactive
+    let res = client.try_fund(&agreement_id, &sponsor);
+    assert_eq!(res, Err(Ok(AgreementError::ProviderNotActive)));
+}
+
+#[test]
+fn test_fund_agreement_invalid_state_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup registry
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    // Setup token
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin.clone());
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    // Create agreement
+    let sponsor = Address::generate(&env);
+    let patient_ref = BytesN::from_array(&env, &[3u8; 32]);
+    let service_commitment = BytesN::from_array(&env, &[4u8; 32]);
+
+    // Mint tokens to sponsor via cross-contract invocation
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (1000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
+
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 86400;
+    let care_deadline = funding_deadline + 86400;
+
+    let agreement_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &patient_ref,
+        &service_commitment,
+        &1000_0000000i128,
+        &900_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &3600u64,
+    );
+
+    // Fund once
+    client.fund(&agreement_id, &sponsor);
+    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Funded);
+
+    // Try to fund again (state is now Funded, not Requested)
+    let res = client.try_fund(&agreement_id, &sponsor);
+    assert_eq!(res, Err(Ok(AgreementError::InvalidState)));
+}
+
+#[test]
+#[should_panic(expected = "HostError")]
+fn test_fund_agreement_unauthorized_fails() {
+    let unauth_env = Env::default();
+    let unauth_contract_id = unauth_env.register(CareAgreementContract, ());
+    let unauth_care_client = CareAgreementContractClient::new(&unauth_env, &unauth_contract_id);
+
+    let unauth_sponsor = Address::generate(&unauth_env);
+
+    // Call fund directly without sponsor auth
+    unauth_care_client.fund(&1u64, &unauth_sponsor);
 }

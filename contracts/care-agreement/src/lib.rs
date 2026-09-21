@@ -386,4 +386,93 @@ impl CareAgreementContract {
 
         Ok(agreement)
     }
+
+    /// Fund an agreement by transferring from sponsor to contract.
+    /// Requires sponsor authorization.
+    /// Transitions state from Requested to Funded.
+    pub fn fund(env: Env, agreement_id: u64, sponsor: Address) -> Result<(), AgreementError> {
+        sponsor.require_auth();
+
+        // Load agreement
+        let key = DataKey::Agreement(agreement_id);
+        let mut agreement: Agreement = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(AgreementError::AgreementNotFound)?;
+
+        // Validate state is Requested
+        if agreement.state != AgreementState::Requested {
+            return Err(AgreementError::InvalidState);
+        }
+
+        // Validate sponsor matches
+        if agreement.sponsor != sponsor {
+            return Err(AgreementError::Unauthorized);
+        }
+
+        // Validate funding deadline not passed
+        let current_time = env.ledger().timestamp();
+        if current_time > agreement.funding_deadline {
+            return Err(AgreementError::FundingDeadlineNotPassed);
+        }
+
+        // Load provider registry and check provider still active
+        let provider_registry: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProviderRegistry)
+            .ok_or(AgreementError::Unauthorized)?;
+
+        use soroban_sdk::IntoVal;
+        let is_active: bool = env.invoke_contract(
+            &provider_registry,
+            &soroban_sdk::Symbol::new(&env, "is_provider_active"),
+            soroban_sdk::Vec::from_array(&env, [agreement.provider.clone().into_val(&env)]),
+        );
+
+        if !is_active {
+            return Err(AgreementError::ProviderNotActive);
+        }
+
+        // Load settlement asset (token contract address)
+        let settlement_asset: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::SettlementAsset)
+            .ok_or(AgreementError::Unauthorized)?;
+
+        // Transfer tokens from sponsor to this contract
+        // Use cross-contract call to invoke token's transfer function
+        env.invoke_contract::<()>(
+            &settlement_asset,
+            &soroban_sdk::Symbol::new(&env, "transfer"),
+            soroban_sdk::Vec::from_array(
+                &env,
+                [
+                    sponsor.clone().into_val(&env),
+                    env.current_contract_address().into_val(&env),
+                    agreement.funding_amount.into_val(&env),
+                ],
+            ),
+        );
+
+        // Update agreement state to Funded
+        agreement.state = AgreementState::Funded;
+        env.storage().persistent().set(&key, &agreement);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+
+        env.events()
+            .publish((symbol_short!("agr_fun"),), agreement_id);
+
+        Ok(())
+    }
 }
