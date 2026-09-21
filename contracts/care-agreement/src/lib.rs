@@ -4,7 +4,11 @@
 //!
 //! Enforces the lifecycle and financial settlement of healthcare care agreements.
 
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, BytesN};
+mod test;
+
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
+};
 
 // ---------------------------------------------------------------------------
 // Constants / TTL configuration
@@ -55,6 +59,14 @@ pub enum DisputeResolution {
     Refund,
 }
 
+/// Wrapper for optional dispute origin to work around SDK serialization.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MaybeDisputeOrigin {
+    None,
+    Some(DisputeOrigin),
+}
+
 /// On-chain record for a care funding agreement.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -81,7 +93,7 @@ pub struct Agreement {
     pub attested_by: Option<Address>,
     pub attested_at: Option<u64>,
 
-    pub dispute_origin: Option<DisputeOrigin>,
+    pub dispute_origin: MaybeDisputeOrigin,
     pub dispute_opened_by: Option<Address>,
     pub dispute_opened_at: Option<u64>,
 
@@ -130,11 +142,102 @@ pub enum AgreementError {
 }
 
 // ---------------------------------------------------------------------------
-// Contract
+// Contract Interface
+// ---------------------------------------------------------------------------
+
+pub trait CareAgreementTrait {
+    /// Initialize the contract with admin, provider registry, and settlement asset.
+    /// Callable only once.
+    fn initialize(
+        env: Env,
+        admin: Address,
+        provider_registry: Address,
+        settlement_asset: Address,
+    ) -> Result<(), AgreementError>;
+
+    /// Read the admin address.
+    fn get_admin(env: Env) -> Result<Address, AgreementError>;
+
+    /// Read the provider registry address.
+    fn get_provider_registry(env: Env) -> Result<Address, AgreementError>;
+
+    /// Read the settlement asset address.
+    fn get_settlement_asset(env: Env) -> Result<Address, AgreementError>;
+}
+
+// ---------------------------------------------------------------------------
+// Contract Implementation
 // ---------------------------------------------------------------------------
 
 #[contract]
 pub struct CareAgreementContract;
 
 #[contractimpl]
-impl CareAgreementContract {}
+impl CareAgreementContract {
+    /// Initialize the contract with admin, provider registry, and settlement asset.
+    /// Callable only once.
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        provider_registry: Address,
+        settlement_asset: Address,
+    ) -> Result<(), AgreementError> {
+        if env.storage().instance().has(&DataKey::Admin) {
+            return Err(AgreementError::AlreadyInitialized);
+        }
+
+        admin.require_auth();
+
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage()
+            .instance()
+            .set(&DataKey::ProviderRegistry, &provider_registry);
+        env.storage()
+            .instance()
+            .set(&DataKey::SettlementAsset, &settlement_asset);
+        env.storage()
+            .instance()
+            .set(&DataKey::NextAgreementId, &1u64);
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+
+        env.events().publish((symbol_short!("init"),), admin);
+
+        Ok(())
+    }
+
+    /// Read the admin address.
+    pub fn get_admin(env: Env) -> Result<Address, AgreementError> {
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(AgreementError::Unauthorized)
+    }
+
+    /// Read the provider registry address.
+    pub fn get_provider_registry(env: Env) -> Result<Address, AgreementError> {
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+        env.storage()
+            .instance()
+            .get(&DataKey::ProviderRegistry)
+            .ok_or(AgreementError::Unauthorized)
+    }
+
+    /// Read the settlement asset address.
+    pub fn get_settlement_asset(env: Env) -> Result<Address, AgreementError> {
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+        env.storage()
+            .instance()
+            .get(&DataKey::SettlementAsset)
+            .ok_or(AgreementError::Unauthorized)
+    }
+}
