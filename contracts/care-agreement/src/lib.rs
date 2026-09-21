@@ -765,4 +765,113 @@ impl CareAgreementContract {
 
         Ok(())
     }
+
+    /// Resolve a dispute on an agreement.
+    /// Requires admin authorization.
+    /// Transitions state from Disputed to appropriate final state based on resolution.
+    /// Performs necessary token transfers based on resolution action.
+    pub fn resolve_dispute(
+        env: Env,
+        agreement_id: u64,
+        resolution: DisputeResolution,
+    ) -> Result<(), AgreementError> {
+        // Load admin
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(AgreementError::Unauthorized)?;
+
+        admin.require_auth();
+
+        // Load agreement
+        let key = DataKey::Agreement(agreement_id);
+        let mut agreement: Agreement = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(AgreementError::AgreementNotFound)?;
+
+        // Validate state is Disputed
+        if agreement.state != AgreementState::Disputed {
+            return Err(AgreementError::InvalidState);
+        }
+
+        // Load settlement asset for transfers
+        let settlement_asset: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::SettlementAsset)
+            .ok_or(AgreementError::Unauthorized)?;
+
+        use soroban_sdk::IntoVal;
+
+        // Execute resolution action
+        match resolution {
+            DisputeResolution::Resume => {
+                // Resume from origin state: move back to CareConfirmed if originated from CareConfirmed,
+                // or Funded if originated from Funded
+                match agreement.dispute_origin {
+                    MaybeDisputeOrigin::Some(DisputeOrigin::CareConfirmed) => {
+                        agreement.state = AgreementState::CareConfirmed;
+                    }
+                    MaybeDisputeOrigin::Some(DisputeOrigin::Funded) => {
+                        agreement.state = AgreementState::Funded;
+                    }
+                    MaybeDisputeOrigin::None => {
+                        return Err(AgreementError::InvalidResolution);
+                    }
+                }
+            }
+            DisputeResolution::Settle => {
+                // Settle: transfer settlement_amount to provider and mark as Settled
+                env.invoke_contract::<()>(
+                    &settlement_asset,
+                    &soroban_sdk::Symbol::new(&env, "transfer"),
+                    soroban_sdk::Vec::from_array(
+                        &env,
+                        [
+                            env.current_contract_address().into_val(&env),
+                            agreement.provider.clone().into_val(&env),
+                            agreement.settlement_amount.into_val(&env),
+                        ],
+                    ),
+                );
+                agreement.state = AgreementState::Settled;
+            }
+            DisputeResolution::Refund => {
+                // Refund: transfer funding_amount back to sponsor and mark as Refunded
+                env.invoke_contract::<()>(
+                    &settlement_asset,
+                    &soroban_sdk::Symbol::new(&env, "transfer"),
+                    soroban_sdk::Vec::from_array(
+                        &env,
+                        [
+                            env.current_contract_address().into_val(&env),
+                            agreement.sponsor.clone().into_val(&env),
+                            agreement.funding_amount.into_val(&env),
+                        ],
+                    ),
+                );
+                agreement.state = AgreementState::Refunded;
+            }
+        }
+
+        // Update agreement with resolution and save
+        env.storage().persistent().set(&key, &agreement);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+
+        env.events()
+            .publish((symbol_short!("agr_res"),), agreement_id);
+
+        Ok(())
+    }
 }
