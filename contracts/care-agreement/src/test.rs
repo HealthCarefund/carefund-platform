@@ -2496,3 +2496,281 @@ fn test_resolve_dispute_unauthorized_fails() {
     unauth_care_client.resolve_dispute(&1u64, &crate::DisputeResolution::Settle);
 }
 
+// ---------------------------------------------------------------------------
+// Full State-Machine Tests (Commit 17)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_complete_lifecycle_requested_to_settled() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup registry and token
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+    let sponsor = Address::generate(&env);
+
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (2000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    // Create agreement
+    let patient_ref = BytesN::from_array(&env, &[3u8; 32]);
+    let service_commitment = BytesN::from_array(&env, &[4u8; 32]);
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 86400;
+    let care_deadline = funding_deadline + 86400;
+
+    let agreement_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &patient_ref,
+        &service_commitment,
+        &1000_0000000i128,
+        &900_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &3600u64,
+    );
+
+    // Verify Requested state
+    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Requested);
+
+    // Fund agreement -> Funded
+    client.fund(&agreement_id, &sponsor);
+    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Funded);
+
+    // Attest care -> CareConfirmed
+    let attestation_commitment = BytesN::from_array(&env, &[5u8; 32]);
+    client.attest_care(&agreement_id, &attester, &attestation_commitment);
+    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::CareConfirmed);
+
+    // Advance past care deadline
+    env.ledger().with_mut(|l| {
+        l.timestamp = care_deadline + 1;
+    });
+
+    // Settle -> Settled
+    client.settle(&agreement_id, &sponsor);
+    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Settled);
+}
+
+#[test]
+fn test_complete_lifecycle_with_dispute_and_resolution() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup registry and token
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+    let sponsor = Address::generate(&env);
+
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (2000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    // Create and fund agreement
+    let patient_ref = BytesN::from_array(&env, &[3u8; 32]);
+    let service_commitment = BytesN::from_array(&env, &[4u8; 32]);
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 86400;
+    let care_deadline = funding_deadline + 86400;
+    let dispute_window_secs = 3600u64;
+
+    let agreement_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &patient_ref,
+        &service_commitment,
+        &1000_0000000i128,
+        &900_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &dispute_window_secs,
+    );
+
+    client.fund(&agreement_id, &sponsor);
+
+    let attestation_commitment = BytesN::from_array(&env, &[5u8; 32]);
+    client.attest_care(&agreement_id, &attester, &attestation_commitment);
+
+    // Advance past care deadline but within dispute window
+    env.ledger().with_mut(|l| {
+        l.timestamp = care_deadline + 100;
+    });
+
+    // Open dispute -> Disputed
+    client.open_dispute(&agreement_id, &sponsor);
+    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Disputed);
+
+    // Resolve dispute with Settle -> Settled
+    client.resolve_dispute(&agreement_id, &crate::DisputeResolution::Settle);
+    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Settled);
+}
+
+#[test]
+fn test_cancellation_from_requested_state() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup registry and token
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    // Create agreement
+    let sponsor = Address::generate(&env);
+    let patient_ref = BytesN::from_array(&env, &[3u8; 32]);
+    let service_commitment = BytesN::from_array(&env, &[4u8; 32]);
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 86400;
+    let care_deadline = funding_deadline + 86400;
+
+    let agreement_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &patient_ref,
+        &service_commitment,
+        &1000_0000000i128,
+        &900_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &3600u64,
+    );
+
+    // Cancel from Requested -> Cancelled
+    client.cancel(&agreement_id, &provider);
+    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Cancelled);
+}
+
+#[test]
+fn test_expiry_transitions() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup registry and token
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+    let sponsor = Address::generate(&env);
+
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (1000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    // Create and fund agreement
+    let patient_ref = BytesN::from_array(&env, &[3u8; 32]);
+    let service_commitment = BytesN::from_array(&env, &[4u8; 32]);
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 86400;
+    let care_deadline = funding_deadline + 86400;
+
+    let agreement_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &patient_ref,
+        &service_commitment,
+        &1000_0000000i128,
+        &900_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &3600u64,
+    );
+
+    client.fund(&agreement_id, &sponsor);
+
+    // Advance past care deadline
+    env.ledger().with_mut(|l| {
+        l.timestamp = care_deadline + 1;
+    });
+
+    // Expire from Funded -> Expired
+    client.expire(&agreement_id);
+    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Expired);
+}
+
