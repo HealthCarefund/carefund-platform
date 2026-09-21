@@ -561,4 +561,64 @@ impl CareAgreementContract {
 
         Ok(())
     }
+
+    /// Attest that care has been provided.
+    /// Requires attester authorization.
+    /// Transitions state from Funded to CareConfirmed.
+    /// Records attestation commitment, attester address, and attestation timestamp.
+    pub fn attest_care(
+        env: Env,
+        agreement_id: u64,
+        attester: Address,
+        attestation_commitment: BytesN<32>,
+    ) -> Result<(), AgreementError> {
+        attester.require_auth();
+
+        // Load agreement
+        let key = DataKey::Agreement(agreement_id);
+        let mut agreement: Agreement = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(AgreementError::AgreementNotFound)?;
+
+        // Validate state is Funded
+        if agreement.state != AgreementState::Funded {
+            return Err(AgreementError::InvalidState);
+        }
+
+        // Validate attester matches
+        if agreement.attester != attester {
+            return Err(AgreementError::Unauthorized);
+        }
+
+        // Validate current time is before care deadline
+        let current_time = env.ledger().timestamp();
+        if current_time > agreement.care_deadline {
+            return Err(AgreementError::CareDeadlineNotPassed);
+        }
+
+        // Record attestation
+        agreement.attestation_commitment = Some(attestation_commitment);
+        agreement.attested_by = Some(attester.clone());
+        agreement.attested_at = Some(current_time);
+
+        // Update agreement state to CareConfirmed
+        agreement.state = AgreementState::CareConfirmed;
+        env.storage().persistent().set(&key, &agreement);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+
+        env.events()
+            .publish((symbol_short!("agr_att"),), agreement_id);
+
+        Ok(())
+    }
 }
