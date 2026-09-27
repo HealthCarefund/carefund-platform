@@ -13,7 +13,7 @@ import (
 
 type providersPageResponse struct {
 	Providers  []providerResponse `json:"providers"`
-	NextCursor string              `json:"nextCursor,omitempty"`
+	NextCursor string             `json:"nextCursor,omitempty"`
 }
 
 type attestersPageResponse struct {
