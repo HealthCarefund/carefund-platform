@@ -16,14 +16,17 @@ import (
 )
 
 // These constants are the real contracts and accounts deployed/registered
-// to Testnet while verifying this phase's work. Not secrets — contract
-// IDs and public keys are, by design, public on-chain identifiers. Only
-// non-mutating (deployer-authorized read/registration) calls and this
-// single seeded agreement (id 1, in Requested state) were performed; see
-// the Commit 13 message for the exact transaction links.
+// to Testnet for Block 1 verification (Phase 10). Not secrets: contract
+// IDs and public keys are, by design, public on-chain identifiers.
+// provider-registry: CCGF5Y7CYRJSCMXE7NRCAXY4CKYWY22BXWOYILFXZD32EXFHOOTLNMSG
+// care-agreement deploy tx: ce155a193b5efdbfd32ca9fc1e5aba93a43bb1a278f3ff4d68565ab964db80f2
+// Agreement id 1 on this contract completed a full real lifecycle
+// (created, funded, attested, settled). Agreement id 2 (referenced
+// below) was created separately and left in Requested state, unfunded,
+// specifically for this test.
 const (
-	liveCareAgreementContractID = "CCKFWGLHUL2CMX5EKZWOGPGJY6H4LKDGHEFC6JDHWSM2XP5DCUKVJGHS"
-	liveProviderAddress         = "GAKEZNJV5AB52YBXLI3BMVQX65TADGZ6MB5UMBPWTXPXIT7O4L3PDYP5"
+	liveCareAgreementContractID = "CD6NC44TOSO2G4RCVHULJUUHI4A52MCAYVAPNKQOLQSATWEK3DRDU2BS"
+	liveProviderAddress         = "GARYN44ZRCQYNXHR6VEB6ZLJWAMSF7SAO6CDCM6NQHOXMCSKJ54UCJBP"
 	liveAttesterAddress         = "GBD5ORGLBELP4MSHDHKOXSRP7BEKTO63T4JO3O2DAXBZSTJVTGMFZFGG"
 	liveSponsorAddress          = "GDEI32FXSM6XIOKHUXT43MOB7GTKRRZVBNVVCW6XE6DXXKL7J3LKCI3S"
 	liveNetworkPassphrase       = "Test SDF Network ; September 2015"
