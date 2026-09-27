@@ -6,13 +6,19 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
+    "pretypecheck": "pnpm --filter @carefund/types run build",
     "typecheck": "tsc --noEmit",
-    "build": "tsc"
+    "prebuild": "pnpm --filter @carefund/types run build",
+    "build": "tsc -p tsconfig.build.json",
+    "pretest": "pnpm --filter @carefund/types run build",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@carefund/types": "workspace:*"
+    "@carefund/types": "workspace:*",
+    "@stellar/stellar-sdk": "17.1.0"
   },
   "devDependencies": {
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "5.0.2"
   }
 }
