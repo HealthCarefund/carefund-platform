@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -75,4 +76,76 @@ func (s *Store) GetAgreement(ctx context.Context, agreementID int64) (*CareAgree
 		return nil, fmt.Errorf("getting agreement %d: %w", agreementID, err)
 	}
 	return &a, nil
+}
+
+// AgreementPage is one page of a cursor-paginated agreement listing.
+// NextCursor is empty when there is no further page.
+type AgreementPage struct {
+	Agreements []CareAgreement
+	NextCursor string
+}
+
+func (s *Store) listAgreementsByWallet(ctx context.Context, column, wallet string, cursor int64, limit int) (AgreementPage, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	// column is one of two fixed, hardcoded identifiers below — never
+	// request-controlled — so this string-built query is not injectable.
+	query := fmt.Sprintf(`
+		SELECT agreement_id, sponsor_wallet, provider_wallet, attester_wallet,
+		       patient_ref_commitment, service_commitment,
+		       funding_amount::text, settlement_amount::text, settlement_asset_contract_id,
+		       funding_deadline, care_deadline, dispute_window_secs, state,
+		       created_at, updated_at
+		FROM care_agreements
+		WHERE %s = $1 AND agreement_id > $2
+		ORDER BY agreement_id
+		LIMIT $3
+	`, column)
+
+	rows, err := s.pool.Query(ctx, query, wallet, cursor, limit)
+	if err != nil {
+		return AgreementPage{}, fmt.Errorf("listing agreements by %s %q: %w", column, wallet, err)
+	}
+	defer rows.Close()
+
+	var page AgreementPage
+	for rows.Next() {
+		var a CareAgreement
+		if err := rows.Scan(
+			&a.AgreementID, &a.SponsorWallet, &a.ProviderWallet, &a.AttesterWallet,
+			&a.PatientRefCommitment, &a.ServiceCommitment,
+			&a.FundingAmount, &a.SettlementAmount, &a.SettlementAssetContractID,
+			&a.FundingDeadline, &a.CareDeadline, &a.DisputeWindowSecs, &a.State,
+			&a.CreatedAt, &a.UpdatedAt,
+		); err != nil {
+			return AgreementPage{}, fmt.Errorf("scanning agreement row: %w", err)
+		}
+		page.Agreements = append(page.Agreements, a)
+	}
+	if err := rows.Err(); err != nil {
+		return AgreementPage{}, fmt.Errorf("iterating agreements by %s %q: %w", column, wallet, err)
+	}
+	if len(page.Agreements) == limit {
+		page.NextCursor = strconv.FormatInt(page.Agreements[len(page.Agreements)-1].AgreementID, 10)
+	}
+	return page, nil
+}
+
+// ListAgreementsByProviderWallet paginates agreements where wallet is the
+// provider, ordered by agreement_id, via an opaque numeric cursor (the
+// last-seen agreement_id).
+func (s *Store) ListAgreementsByProviderWallet(ctx context.Context, wallet string, cursor int64, limit int) (AgreementPage, error) {
+	return s.listAgreementsByWallet(ctx, "provider_wallet", wallet, cursor, limit)
+}
+
+// ListAgreementsBySponsorWallet paginates agreements where wallet is the
+// sponsor, ordered by agreement_id, via an opaque numeric cursor (the
+// last-seen agreement_id).
+func (s *Store) ListAgreementsBySponsorWallet(ctx context.Context, wallet string, cursor int64, limit int) (AgreementPage, error) {
+	return s.listAgreementsByWallet(ctx, "sponsor_wallet", wallet, cursor, limit)
 }

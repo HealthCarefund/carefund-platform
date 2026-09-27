@@ -28,7 +28,7 @@ const (
 	liveSponsorAddress          = "GDEI32FXSM6XIOKHUXT43MOB7GTKRRZVBNVVCW6XE6DXXKL7J3LKCI3S"
 	liveNetworkPassphrase       = "Test SDF Network ; September 2015"
 	liveRPCURL                  = "https://soroban-testnet.stellar.org"
-	liveSeededAgreementID       = int64(1)
+	liveSeededAgreementID       = int64(2)
 )
 
 func liveTestnetAgreement() store.CareAgreement {
@@ -178,7 +178,7 @@ func TestPrepareTransaction_FundLiveTestnet(t *testing.T) {
 		t.Fatalf("UpsertAgreement: %v", err)
 	}
 
-	rec := postJSON(t, mux, "/api/v1/agreements/1/transactions", prepareTransactionRequest{
+	rec := postJSON(t, mux, "/api/v1/agreements/2/transactions", prepareTransactionRequest{
 		Operation:       operationFund,
 		SourcePublicKey: liveSponsorAddress,
 	})
