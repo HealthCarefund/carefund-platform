@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ThemeToggle } from "./theme-toggle";
+import { WalletButton } from "./wallet-button";
 
 export function SiteHeader() {
   return (
@@ -29,12 +30,7 @@ export function SiteHeader() {
 
         <div className="flex items-center gap-3">
           <ThemeToggle />
-          <Link
-            href="/connect"
-            className="focus-ring rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700"
-          >
-            Connect wallet
-          </Link>
+          <WalletButton />
         </div>
       </div>
     </header>
