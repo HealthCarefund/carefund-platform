@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -69,4 +70,51 @@ func (s *Store) ListAttestersByProvider(ctx context.Context, providerWallet stri
 		return nil, fmt.Errorf("iterating attesters for provider %q: %w", providerWallet, err)
 	}
 	return result, nil
+}
+
+// AttesterPage is one page of a cursor-paginated attester directory
+// listing. NextCursor is empty when there is no further page.
+type AttesterPage struct {
+	Attesters  []Attester
+	NextCursor string
+}
+
+// ListAttesters returns every attester mirrored off-chain across all
+// providers, ordered by id for stable pagination — the public attester
+// directory admin view.
+func (s *Store) ListAttesters(ctx context.Context, cursor int64, limit int) (AttesterPage, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, wallet_address, provider_wallet, credential_ref, status, created_at, updated_at
+		FROM attesters
+		WHERE id > $1
+		ORDER BY id
+		LIMIT $2
+	`, cursor, limit)
+	if err != nil {
+		return AttesterPage{}, fmt.Errorf("listing attesters: %w", err)
+	}
+	defer rows.Close()
+
+	var page AttesterPage
+	for rows.Next() {
+		var a Attester
+		if err := rows.Scan(&a.ID, &a.WalletAddress, &a.ProviderWallet, &a.CredentialRef, &a.Status, &a.CreatedAt, &a.UpdatedAt); err != nil {
+			return AttesterPage{}, fmt.Errorf("scanning attester row: %w", err)
+		}
+		page.Attesters = append(page.Attesters, a)
+	}
+	if err := rows.Err(); err != nil {
+		return AttesterPage{}, fmt.Errorf("iterating attesters: %w", err)
+	}
+	if len(page.Attesters) == limit {
+		page.NextCursor = strconv.FormatInt(page.Attesters[len(page.Attesters)-1].ID, 10)
+	}
+	return page, nil
 }

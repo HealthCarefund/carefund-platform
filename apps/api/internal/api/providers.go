@@ -11,6 +11,16 @@ import (
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/store"
 )
 
+type providersPageResponse struct {
+	Providers  []providerResponse `json:"providers"`
+	NextCursor string              `json:"nextCursor,omitempty"`
+}
+
+type attestersPageResponse struct {
+	Attesters  []attesterResponse `json:"attesters"`
+	NextCursor string             `json:"nextCursor,omitempty"`
+}
+
 type providerResponse struct {
 	WalletAddress string `json:"walletAddress"`
 	ProviderRef   string `json:"providerRef"`
@@ -45,7 +55,62 @@ func toAttesterResponse(a store.Attester) attesterResponse {
 	}
 }
 
+// registerProviderRoutes also serves the public provider/attester
+// directory (GET /api/v1/providers, GET /api/v1/attesters) — not part of
+// the original approved endpoint list, but needed for the Unit R admin
+// directory views (/admin/providers, /admin/attesters), which have no
+// other way to discover which wallets exist off a single known wallet.
+// Same read-only, off-chain mirror shape and cursor-pagination
+// convention as every other listing endpoint already built.
 func registerProviderRoutes(mux *http.ServeMux, deps Deps) {
+	mux.HandleFunc("GET /api/v1/providers", func(w http.ResponseWriter, r *http.Request) {
+		cursor, ok := parseEventsCursor(w, r.URL.Query().Get("cursor"))
+		if !ok {
+			return
+		}
+		limit, ok := parseEventsLimit(w, r.URL.Query().Get("limit"))
+		if !ok {
+			return
+		}
+		page, err := deps.Store.ListProviders(r.Context(), cursor, limit)
+		if err != nil {
+			httpx.WriteInternal(w, deps.Logger, err, "ListProviders")
+			return
+		}
+		response := providersPageResponse{
+			Providers:  make([]providerResponse, 0, len(page.Providers)),
+			NextCursor: page.NextCursor,
+		}
+		for i := range page.Providers {
+			response.Providers = append(response.Providers, toProviderResponse(&page.Providers[i]))
+		}
+		writeJSON(w, http.StatusOK, response)
+	})
+
+	mux.HandleFunc("GET /api/v1/attesters", func(w http.ResponseWriter, r *http.Request) {
+		cursor, ok := parseEventsCursor(w, r.URL.Query().Get("cursor"))
+		if !ok {
+			return
+		}
+		limit, ok := parseEventsLimit(w, r.URL.Query().Get("limit"))
+		if !ok {
+			return
+		}
+		page, err := deps.Store.ListAttesters(r.Context(), cursor, limit)
+		if err != nil {
+			httpx.WriteInternal(w, deps.Logger, err, "ListAttesters")
+			return
+		}
+		response := attestersPageResponse{
+			Attesters:  make([]attesterResponse, 0, len(page.Attesters)),
+			NextCursor: page.NextCursor,
+		}
+		for i := range page.Attesters {
+			response.Attesters = append(response.Attesters, toAttesterResponse(page.Attesters[i]))
+		}
+		writeJSON(w, http.StatusOK, response)
+	})
+
 	mux.HandleFunc("GET /api/v1/providers/{wallet}", func(w http.ResponseWriter, r *http.Request) {
 		wallet := r.PathValue("wallet")
 		if !isStellarAccountAddress(wallet) {

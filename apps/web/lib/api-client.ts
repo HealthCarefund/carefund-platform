@@ -184,6 +184,32 @@ export function listProviderAttesters(wallet: string): Promise<AttesterResponse[
   return request(`/api/v1/providers/${encodeURIComponent(wallet)}/attesters`);
 }
 
+export interface ProvidersPageResponse {
+  providers: ProviderResponse[];
+  nextCursor?: string;
+}
+
+export interface AttestersPageResponse {
+  attesters: AttesterResponse[];
+  nextCursor?: string;
+}
+
+export function listProviders(options?: { cursor?: string; limit?: number }): Promise<ProvidersPageResponse> {
+  const params = new URLSearchParams();
+  if (options?.cursor) params.set("cursor", options.cursor);
+  if (options?.limit) params.set("limit", String(options.limit));
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return request(`/api/v1/providers${query}`);
+}
+
+export function listAttesters(options?: { cursor?: string; limit?: number }): Promise<AttestersPageResponse> {
+  const params = new URLSearchParams();
+  if (options?.cursor) params.set("cursor", options.cursor);
+  if (options?.limit) params.set("limit", String(options.limit));
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return request(`/api/v1/attesters${query}`);
+}
+
 export interface AgreementsPageResponse {
   agreements: AgreementResponse[];
   nextCursor?: string;
