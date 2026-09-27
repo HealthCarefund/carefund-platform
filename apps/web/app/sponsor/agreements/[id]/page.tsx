@@ -72,7 +72,11 @@ export default function SponsorAgreementDetailPage() {
   }
 
   if (load.status === "loading") {
-    return <p className="mx-auto max-w-3xl px-4 py-12 text-sm text-ink-500 sm:px-6 dark:text-ink-400">Loading&hellip;</p>;
+    return (
+      <p role="status" aria-live="polite" className="mx-auto max-w-3xl px-4 py-12 text-sm text-ink-500 sm:px-6 dark:text-ink-400">
+        Loading&hellip;
+      </p>
+    );
   }
   if (load.status === "not_found") {
     return <p className="mx-auto max-w-3xl px-4 py-12 text-sm text-ink-600 sm:px-6 dark:text-ink-300">Agreement not found.</p>;

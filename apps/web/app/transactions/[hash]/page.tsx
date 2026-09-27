@@ -45,7 +45,7 @@ export default function TransactionStatusPage() {
       <p className="mt-2 font-mono text-sm break-all text-ink-500 dark:text-ink-400">{hash}</p>
 
       {load.status === "loading" && (
-        <p className="mt-8 text-sm text-ink-500 dark:text-ink-400">Looking up&hellip;</p>
+        <p role="status" aria-live="polite" className="mt-8 text-sm text-ink-500 dark:text-ink-400">Looking up&hellip;</p>
       )}
 
       {load.status === "error" && (

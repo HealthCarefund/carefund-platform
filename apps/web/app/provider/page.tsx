@@ -64,7 +64,7 @@ export default function ProviderDashboardPage() {
       )}
 
       {load.status === "loading" && (
-        <p className="mt-8 text-sm text-ink-500 dark:text-ink-400">Loading&hellip;</p>
+        <p role="status" aria-live="polite" className="mt-8 text-sm text-ink-500 dark:text-ink-400">Loading&hellip;</p>
       )}
 
       {load.status === "not_registered" && (

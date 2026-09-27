@@ -45,6 +45,10 @@
     --surface: #171b21;
     --foreground: var(--color-ink-50);
     --border-subtle: var(--color-ink-700);
+    /* #b8452f (the light-mode value) only reaches 3.54:1 against this
+       background — short of the 4.5:1 WCAG AA text threshold. This
+       lighter shade keeps the same hue at 6.3:1. */
+    --color-danger-500: #e07856;
     color-scheme: dark;
   }
 }
@@ -54,6 +58,7 @@
   --surface: #171b21;
   --foreground: var(--color-ink-50);
   --border-subtle: var(--color-ink-700);
+  --color-danger-500: #e07856;
   color-scheme: dark;
 }
 
