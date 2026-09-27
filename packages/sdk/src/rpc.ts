@@ -1,6 +1,9 @@
 import { rpc } from "@stellar/stellar-sdk";
 import type { StellarClientConfig } from "./config.js";
 
+/** Narrow dependency so tests can supply a fixture without a real RPC client. */
+export type AccountLookupClient = Pick<rpc.Server, "getAccount">;
+
 /**
  * Creates the Soroban RPC client for a validated config. `allowHttp` is
  * derived, never asked for separately, so a plain-HTTP RPC URL can only

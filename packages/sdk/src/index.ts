@@ -6,6 +6,39 @@ export { createRpcServer } from "./rpc.js";
 export type { CareFundContracts } from "./contracts.js";
 export { createCareFundContracts, settlementAssetContractId } from "./contracts.js";
 
+export type { AccountLookupClient } from "./rpc.js";
+
+export {
+  createProviderRegistryReader,
+  createCareAgreementReader,
+  getProvider,
+  getAttester,
+  isProviderActive,
+  isAttesterAuthorizedForProvider,
+  getAgreement,
+} from "./reads.js";
+
+export type {
+  CreateAgreementParams,
+  FundAgreementParams,
+  CancelAgreementParams,
+  AttestCareParams,
+  OpenDisputeParams,
+  ExpireAgreementParams,
+  SettleAgreementParams,
+  ResolveDisputeParams,
+} from "./transaction/builders.js";
+export {
+  createAgreementTransaction,
+  fundAgreementTransaction,
+  cancelAgreementTransaction,
+  attestCareTransaction,
+  openDisputeTransaction,
+  expireAgreementTransaction,
+  settleAgreementTransaction,
+  resolveDisputeTransaction,
+} from "./transaction/builders.js";
+
 export type { ContractCallRequest } from "./transaction/build.js";
 export { buildContractCallTransaction } from "./transaction/build.js";
 
@@ -31,6 +64,7 @@ export {
 export {
   SdkError,
   ConfigValidationError,
+  ContractCallError,
   SimulationFailedError,
   SubmissionRejectedError,
   TransactionFailedError,

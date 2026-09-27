@@ -1,4 +1,5 @@
 import type { rpc } from "@stellar/stellar-sdk";
+import type { ContractErrorCode, ContractName } from "@carefund/types";
 
 /** Base class for every error this SDK throws. Never thrown directly. */
 export abstract class SdkError extends Error {
@@ -14,6 +15,20 @@ export class ConfigValidationError extends SdkError {
   constructor(readonly issues: readonly string[]) {
     super(`Invalid Stellar client configuration: ${issues.join("; ")}`);
     this.name = "ConfigValidationError";
+  }
+}
+
+/**
+ * A read (or a simulated write) came back with one of the contract's own
+ * `#[contracterror]` variants, carried through unchanged from the
+ * generated bindings' `Result.unwrapErr().message` — never re-derived or
+ * guessed at this layer.
+ */
+export class ContractCallError extends SdkError {
+  readonly code = "CONTRACT_CALL_FAILED";
+  constructor(readonly contract: ContractName, readonly contractErrorCode: ContractErrorCode) {
+    super(`${contract} rejected the call: ${contractErrorCode}`);
+    this.name = "ContractCallError";
   }
 }
 

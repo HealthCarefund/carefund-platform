@@ -6,16 +6,19 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "pretypecheck": "pnpm --filter @carefund/types run build",
+    "pretypecheck": "pnpm --filter @carefund/types --filter @carefund/contract-bindings-provider-registry --filter @carefund/contract-bindings-care-agreement run build",
     "typecheck": "tsc --noEmit",
-    "prebuild": "pnpm --filter @carefund/types run build",
+    "prebuild": "pnpm --filter @carefund/types --filter @carefund/contract-bindings-provider-registry --filter @carefund/contract-bindings-care-agreement run build",
     "build": "tsc -p tsconfig.build.json",
-    "pretest": "pnpm --filter @carefund/types run build",
+    "pretest": "pnpm --filter @carefund/types --filter @carefund/contract-bindings-provider-registry --filter @carefund/contract-bindings-care-agreement run build",
     "test": "vitest run"
   },
   "dependencies": {
     "@carefund/types": "workspace:*",
-    "@stellar/stellar-sdk": "17.1.0"
+    "@carefund/contract-bindings-provider-registry": "workspace:*",
+    "@carefund/contract-bindings-care-agreement": "workspace:*",
+    "@stellar/stellar-sdk": "17.1.0",
+    "buffer": "6.0.3"
   },
   "devDependencies": {
     "typescript": "6.0.3",
