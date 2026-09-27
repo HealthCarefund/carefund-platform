@@ -288,6 +288,15 @@ impl CareAgreementContract {
         if care_deadline <= funding_deadline {
             return Err(AgreementError::InvalidDeadline);
         }
+        // care_deadline + dispute_window_secs is computed later, in
+        // open_dispute, as a plain u64 addition. Rejecting an overflowing
+        // combination here means that computation can never trap: a
+        // caller-supplied dispute_window_secs near u64::MAX would
+        // otherwise pass validation here and only fail, permanently, the
+        // first time anyone tried to open a dispute on this agreement.
+        if care_deadline.checked_add(dispute_window_secs).is_none() {
+            return Err(AgreementError::ArithmeticOverflow);
+        }
 
         // Cross-contract call: check provider is active
         use soroban_sdk::IntoVal;
@@ -532,7 +541,8 @@ impl CareAgreementContract {
             .ok_or(AgreementError::AgreementNotFound)?;
 
         // Validate state is Funded or CareConfirmed
-        if agreement.state != AgreementState::Funded && agreement.state != AgreementState::CareConfirmed
+        if agreement.state != AgreementState::Funded
+            && agreement.state != AgreementState::CareConfirmed
         {
             return Err(AgreementError::InvalidState);
         }
@@ -642,7 +652,8 @@ impl CareAgreementContract {
             .ok_or(AgreementError::AgreementNotFound)?;
 
         // Validate state is Funded or CareConfirmed
-        if agreement.state != AgreementState::Funded && agreement.state != AgreementState::CareConfirmed
+        if agreement.state != AgreementState::Funded
+            && agreement.state != AgreementState::CareConfirmed
         {
             return Err(AgreementError::InvalidState);
         }

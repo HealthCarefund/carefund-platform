@@ -2,8 +2,8 @@
 
 use crate::{AgreementError, AgreementState, CareAgreementContract, CareAgreementContractClient};
 use provider_registry::{ProviderRegistryContract, ProviderRegistryContractClient};
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 use soroban_sdk::testutils::Ledger;
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
 // Bring provider-registry as external crate for testing
 extern crate provider_registry;
@@ -276,6 +276,51 @@ fn test_create_agreement_invalid_deadlines() {
         &3600u64,
     );
     assert_eq!(res, Err(Ok(AgreementError::InvalidDeadline)));
+}
+
+#[test]
+fn test_create_agreement_dispute_window_overflow_rejected() {
+    // care_deadline + dispute_window_secs is computed as a plain u64
+    // addition later, in open_dispute. A dispute_window_secs near
+    // u64::MAX must be rejected here at creation time, not left to trap
+    // the first time anyone calls open_dispute on this agreement.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    let (client, admin) = create_client(&env);
+    let settlement_asset = Address::generate(&env);
+    client.initialize(&admin, &registry_client.address, &settlement_asset);
+
+    let sponsor = Address::generate(&env);
+    let patient_ref = BytesN::from_array(&env, &[3u8; 32]);
+    let service_commitment = BytesN::from_array(&env, &[4u8; 32]);
+
+    let current_time = env.ledger().timestamp();
+
+    let res = client.try_create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &patient_ref,
+        &service_commitment,
+        &1000_0000000i128,
+        &900_0000000i128,
+        &(current_time + 3600),
+        &(current_time + 7200),
+        &u64::MAX,
+    );
+    assert_eq!(res, Err(Ok(AgreementError::ArithmeticOverflow)));
 }
 
 #[test]
@@ -706,7 +751,10 @@ fn test_fund_agreement_invalid_state_rejected() {
 
     // Fund once
     client.fund(&agreement_id, &sponsor);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Funded);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Funded
+    );
 
     // Try to fund again (state is now Funded, not Requested)
     let res = client.try_fund(&agreement_id, &sponsor);
@@ -902,7 +950,10 @@ fn test_cancel_agreement_funded_state_rejected() {
 
     // Fund the agreement
     client.fund(&agreement_id, &sponsor);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Funded);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Funded
+    );
 
     // Try to cancel after funding (should fail - state is no longer Requested)
     let res = client.try_cancel(&agreement_id, &provider);
@@ -988,7 +1039,10 @@ fn test_expire_agreement_from_funded_success() {
 
     // Fund the agreement
     client.fund(&agreement_id, &sponsor);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Funded);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Funded
+    );
 
     // Advance time past care deadline
     env.ledger().with_mut(|l| {
@@ -1193,7 +1247,10 @@ fn test_attest_care_success() {
 
     // Fund the agreement
     client.fund(&agreement_id, &sponsor);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Funded);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Funded
+    );
 
     // Attest care
     let attestation_commitment = BytesN::from_array(&env, &[5u8; 32]);
@@ -1202,7 +1259,10 @@ fn test_attest_care_success() {
     // Verify agreement is now in CareConfirmed state
     let agreement = client.get_agreement(&agreement_id);
     assert_eq!(agreement.state, AgreementState::CareConfirmed);
-    assert_eq!(agreement.attestation_commitment, Some(attestation_commitment));
+    assert_eq!(
+        agreement.attestation_commitment,
+        Some(attestation_commitment)
+    );
     assert_eq!(agreement.attested_by, Some(attester.clone()));
     assert_eq!(agreement.attested_at, Some(current_time));
 }
@@ -1484,7 +1544,10 @@ fn test_open_dispute_from_funded_success() {
 
     // Fund the agreement
     client.fund(&agreement_id, &sponsor);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Funded);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Funded
+    );
 
     // Advance time past care deadline but within dispute window
     env.ledger().with_mut(|l| {
@@ -1567,7 +1630,10 @@ fn test_open_dispute_from_care_confirmed_success() {
     // Attest care (move to CareConfirmed)
     let attestation_commitment = BytesN::from_array(&env, &[5u8; 32]);
     client.attest_care(&agreement_id, &attester, &attestation_commitment);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::CareConfirmed);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::CareConfirmed
+    );
 
     // Advance time past care deadline but within dispute window
     env.ledger().with_mut(|l| {
@@ -1941,7 +2007,10 @@ fn test_settle_agreement_success() {
     // Attest care
     let attestation_commitment = BytesN::from_array(&env, &[5u8; 32]);
     client.attest_care(&agreement_id, &attester, &attestation_commitment);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::CareConfirmed);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::CareConfirmed
+    );
 
     // Advance time past care deadline
     env.ledger().with_mut(|l| {
@@ -2267,7 +2336,10 @@ fn test_resolve_dispute_resume_success() {
     });
 
     client.open_dispute(&agreement_id, &sponsor);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Disputed);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Disputed
+    );
 
     // Resolve dispute with Resume
     client.resolve_dispute(&agreement_id, &crate::DisputeResolution::Resume);
@@ -2558,16 +2630,25 @@ fn test_complete_lifecycle_requested_to_settled() {
     );
 
     // Verify Requested state
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Requested);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Requested
+    );
 
     // Fund agreement -> Funded
     client.fund(&agreement_id, &sponsor);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Funded);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Funded
+    );
 
     // Attest care -> CareConfirmed
     let attestation_commitment = BytesN::from_array(&env, &[5u8; 32]);
     client.attest_care(&agreement_id, &attester, &attestation_commitment);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::CareConfirmed);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::CareConfirmed
+    );
 
     // Advance past care deadline
     env.ledger().with_mut(|l| {
@@ -2576,7 +2657,10 @@ fn test_complete_lifecycle_requested_to_settled() {
 
     // Settle -> Settled
     client.settle(&agreement_id, &sponsor);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Settled);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Settled
+    );
 }
 
 #[test]
@@ -2649,11 +2733,17 @@ fn test_complete_lifecycle_with_dispute_and_resolution() {
 
     // Open dispute -> Disputed
     client.open_dispute(&agreement_id, &sponsor);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Disputed);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Disputed
+    );
 
     // Resolve dispute with Settle -> Settled
     client.resolve_dispute(&agreement_id, &crate::DisputeResolution::Settle);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Settled);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Settled
+    );
 }
 
 #[test]
@@ -2702,7 +2792,10 @@ fn test_cancellation_from_requested_state() {
 
     // Cancel from Requested -> Cancelled
     client.cancel(&agreement_id, &provider);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Cancelled);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Cancelled
+    );
 }
 
 #[test]
@@ -2771,7 +2864,10 @@ fn test_expiry_transitions() {
 
     // Expire from Funded -> Expired
     client.expire(&agreement_id);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Expired);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Expired
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -2962,7 +3058,10 @@ fn test_cross_contract_provider_suspension_and_reinstatement_for_funding() {
     // Funding succeeds after reinstatement
     let res_ok = client.try_fund(&agreement_id, &sponsor);
     assert!(res_ok.is_ok());
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Funded);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Funded
+    );
 }
 
 #[test]
@@ -3385,11 +3484,17 @@ fn test_cross_contract_dispute_refund_token_balance_lifecycle() {
 
     // Open dispute from Funded state
     client.open_dispute(&agreement_id, &sponsor);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Disputed);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Disputed
+    );
 
     // Resolve dispute with Refund -> sponsor gets full 2000 back
     client.resolve_dispute(&agreement_id, &crate::DisputeResolution::Refund);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Refunded);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Refunded
+    );
 
     assert_eq!(get_balance(&sponsor), 2000_0000000i128);
     assert_eq!(get_balance(&client.address), 0i128);
@@ -3497,7 +3602,10 @@ fn test_cross_contract_multiple_providers_and_attesters_isolation() {
     // Provider 2 lifecycle proceeds completely unaffected
     let attestation_ref = BytesN::from_array(&env, &[7u8; 32]);
     client.attest_care(&ag2, &attester_2, &attestation_ref);
-    assert_eq!(client.get_agreement(&ag2).state, AgreementState::CareConfirmed);
+    assert_eq!(
+        client.get_agreement(&ag2).state,
+        AgreementState::CareConfirmed
+    );
 
     // Advance past care deadline
     env.ledger().with_mut(|l| {
@@ -3603,7 +3711,10 @@ fn test_security_double_funding_attack_rejected() {
 
     // First funding succeeds
     assert!(client.try_fund(&agreement_id, &sponsor).is_ok());
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Funded);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Funded
+    );
 
     // Second funding attempt rejected with InvalidState
     let res = client.try_fund(&agreement_id, &sponsor);
@@ -3774,7 +3885,10 @@ fn test_security_double_settlement_rejected() {
 
     // First settle succeeds
     assert!(client.try_settle(&agreement_id, &sponsor).is_ok());
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Settled);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Settled
+    );
 
     // Second settle attempt rejected with InvalidState
     let res = client.try_settle(&agreement_id, &sponsor);
@@ -4359,13 +4473,19 @@ fn test_security_double_dispute_resolution_rejected() {
     });
 
     client.open_dispute(&agreement_id, &sponsor);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Disputed);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Disputed
+    );
 
     // Resolve dispute with Refund
     assert!(client
         .try_resolve_dispute(&agreement_id, &crate::DisputeResolution::Refund)
         .is_ok());
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Refunded);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Refunded
+    );
 
     // Second resolution attempt rejected with InvalidState
     let res = client.try_resolve_dispute(&agreement_id, &crate::DisputeResolution::Settle);
@@ -4475,7 +4595,10 @@ fn test_security_cancellation_wrong_state_rejected() {
     );
 
     client.fund(&agreement_id, &sponsor);
-    assert_eq!(client.get_agreement(&agreement_id).state, AgreementState::Funded);
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Funded
+    );
 
     // Cancel on Funded agreement rejected with InvalidState
     let res = client.try_cancel(&agreement_id, &provider);
@@ -4828,6 +4951,3 @@ fn test_security_nonexistent_agreement_operations_rejected() {
         Err(Ok(AgreementError::AgreementNotFound))
     );
 }
-
-
-
