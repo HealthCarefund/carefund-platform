@@ -14,9 +14,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@carefund/types": "workspace:*",
-    "@carefund/contract-bindings-provider-registry": "workspace:*",
     "@carefund/contract-bindings-care-agreement": "workspace:*",
+    "@carefund/contract-bindings-provider-registry": "workspace:*",
+    "@carefund/types": "workspace:*",
+    "@stellar/freighter-api": "6.0.1",
     "@stellar/stellar-sdk": "17.1.0",
     "buffer": "6.0.3"
   },

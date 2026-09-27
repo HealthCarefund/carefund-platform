@@ -58,6 +58,58 @@ export class SubmissionRejectedError extends SdkError {
   }
 }
 
+/** No Freighter extension was detected in this browser. */
+export class WalletNotInstalledError extends SdkError {
+  readonly code = "WALLET_NOT_INSTALLED";
+  constructor() {
+    super("Freighter wallet extension was not detected in this browser");
+    this.name = "WalletNotInstalledError";
+  }
+}
+
+/**
+ * The user declined the connect/access-request prompt, or Freighter
+ * otherwise refused to grant access. Carries Freighter's own error code
+ * and message unchanged.
+ */
+export class WalletConnectionRejectedError extends SdkError {
+  readonly code = "WALLET_CONNECTION_REJECTED";
+  constructor(readonly freighterCode: number, readonly freighterMessage: string) {
+    super(`Wallet connection was rejected: ${freighterMessage}`);
+    this.name = "WalletConnectionRejectedError";
+  }
+}
+
+/**
+ * The wallet is connected to a different network than this app is
+ * configured for. Signing must never proceed in this state — a
+ * transaction signed for the wrong network is either rejected outright or,
+ * worse, valid on a network the user didn't intend to use.
+ */
+export class WrongNetworkError extends SdkError {
+  readonly code = "WRONG_NETWORK";
+  constructor(readonly expectedPassphrase: string, readonly actualPassphrase: string) {
+    super(
+      `Wallet is connected to the wrong network: expected passphrase "${expectedPassphrase}", wallet reports "${actualPassphrase}"`,
+    );
+    this.name = "WrongNetworkError";
+  }
+}
+
+/**
+ * The user declined to sign, or Freighter otherwise refused to sign, a
+ * specific transaction. Distinct from `WalletConnectionRejectedError`
+ * (declining the initial connection) and from any submission/confirmation
+ * error (which can only happen after a signature was actually obtained).
+ */
+export class WalletSigningRejectedError extends SdkError {
+  readonly code = "WALLET_SIGNING_REJECTED";
+  constructor(readonly freighterCode: number, readonly freighterMessage: string) {
+    super(`Wallet declined to sign the transaction: ${freighterMessage}`);
+    this.name = "WalletSigningRejectedError";
+  }
+}
+
 /** `getTransaction` confirmed the transaction landed but failed on-chain. */
 export class TransactionFailedError extends SdkError {
   readonly code = "TRANSACTION_FAILED";

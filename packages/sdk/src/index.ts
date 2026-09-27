@@ -65,8 +65,21 @@ export {
   SdkError,
   ConfigValidationError,
   ContractCallError,
+  WalletNotInstalledError,
+  WalletConnectionRejectedError,
+  WrongNetworkError,
+  WalletSigningRejectedError,
   SimulationFailedError,
   SubmissionRejectedError,
   TransactionFailedError,
   TransactionTimeoutError,
 } from "./errors.js";
+
+export {
+  isFreighterInstalled,
+  connectFreighterWallet,
+  disconnectFreighterWallet,
+  getConnectedFreighterAddress,
+  verifyFreighterNetwork,
+  createFreighterSigner,
+} from "./wallet/freighter.js";
