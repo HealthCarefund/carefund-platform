@@ -27,4 +27,5 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	registerAgreementRoutes(mux, deps)
 	registerIntentRoutes(mux, deps)
 	registerTransactionPrepRoutes(mux, deps)
+	registerTransactionLookupRoutes(mux, deps)
 }
