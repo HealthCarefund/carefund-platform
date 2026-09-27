@@ -1,24 +1,18 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import {
   isStellarAddress,
   isCommitmentHash,
   isStellarAmount,
-  toStellarAddress,
-  toCommitmentHash,
-  toStellarAmount,
-  toLedgerTimestamp,
-  toDurationSeconds,
 } from "@carefund/types";
 import { useWallet } from "@/lib/wallet-context";
-import { useTransactionFlow, prepareCreateAgreement } from "@/lib/use-transaction-flow";
-import { TransactionStatus } from "@/app/components/transaction-status";
+import { getStellarConfig } from "@/lib/stellar-config";
+import { createAgreementIntent, ApiError, type IntentResponse } from "@/lib/api-client";
 
 interface FormValues {
-  sponsor: string;
-  attester: string;
+  providerWallet: string;
+  attesterWallet: string;
   patientRefCommitment: string;
   serviceCommitment: string;
   fundingAmount: string;
@@ -29,8 +23,8 @@ interface FormValues {
 }
 
 const EMPTY: FormValues = {
-  sponsor: "",
-  attester: "",
+  providerWallet: "",
+  attesterWallet: "",
   patientRefCommitment: "",
   serviceCommitment: "",
   fundingAmount: "",
@@ -42,8 +36,8 @@ const EMPTY: FormValues = {
 
 function validate(values: FormValues): Partial<Record<keyof FormValues, string>> {
   const errors: Partial<Record<keyof FormValues, string>> = {};
-  if (!isStellarAddress(values.sponsor)) errors.sponsor = "Enter a valid Stellar address (G...).";
-  if (!isStellarAddress(values.attester)) errors.attester = "Enter a valid Stellar address (G...).";
+  if (!isStellarAddress(values.providerWallet)) errors.providerWallet = "Enter a valid Stellar address (G...).";
+  if (!isStellarAddress(values.attesterWallet)) errors.attesterWallet = "Enter a valid Stellar address (G...).";
   if (!isCommitmentHash(values.patientRefCommitment)) {
     errors.patientRefCommitment = "Enter a 64-character lowercase hex commitment hash, not patient data.";
   }
@@ -76,12 +70,17 @@ const inputClass =
 const labelClass = "text-sm font-medium";
 const errorClass = "mt-1 text-xs text-danger-500";
 
-export default function NewAgreementPage() {
-  const router = useRouter();
-  const { status: walletStatus, address, getSigner } = useWallet();
+type SubmitState =
+  | { status: "idle" }
+  | { status: "submitting" }
+  | { status: "error"; message: string }
+  | { status: "created"; intent: IntentResponse };
+
+export default function NewSponsorAgreementPage() {
+  const { status: walletStatus, address } = useWallet();
   const [values, setValues] = useState<FormValues>(EMPTY);
   const [errors, setErrors] = useState<Partial<Record<keyof FormValues, string>>>({});
-  const { state, run, reset } = useTransactionFlow(getSigner);
+  const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
 
   const field = (key: keyof FormValues) => ({
     value: values[key],
@@ -95,57 +94,77 @@ export default function NewAgreementPage() {
     setErrors(validationErrors);
     if (Object.keys(validationErrors).length > 0) return;
 
-    reset();
-    await run(
-      prepareCreateAgreement({
-        provider: toStellarAddress(address),
-        sponsor: toStellarAddress(values.sponsor),
-        attester: toStellarAddress(values.attester),
-        patientRefCommitment: toCommitmentHash(values.patientRefCommitment),
-        serviceCommitment: toCommitmentHash(values.serviceCommitment),
-        fundingAmount: toStellarAmount(values.fundingAmount),
-        settlementAmount: toStellarAmount(values.settlementAmount),
-        fundingDeadline: toLedgerTimestamp(String(Math.floor(Date.parse(values.fundingDeadline) / 1000))),
-        careDeadline: toLedgerTimestamp(String(Math.floor(Date.parse(values.careDeadline) / 1000))),
-        disputeWindowSecs: toDurationSeconds(String(Math.round(Number(values.disputeWindowHours) * 3600))),
-        sourcePublicKey: toStellarAddress(address),
-        timeoutSeconds: 60,
-      }),
-    );
+    setSubmit({ status: "submitting" });
+    try {
+      const intent = await createAgreementIntent({
+        sponsorWallet: address,
+        providerWallet: values.providerWallet,
+        attesterWallet: values.attesterWallet,
+        patientRefCommitment: values.patientRefCommitment,
+        serviceCommitment: values.serviceCommitment,
+        fundingAmount: values.fundingAmount,
+        settlementAmount: values.settlementAmount,
+        settlementAssetContractId: getStellarConfig().settlementAssetContractId,
+        fundingDeadline: String(Math.floor(Date.parse(values.fundingDeadline) / 1000)),
+        careDeadline: String(Math.floor(Date.parse(values.careDeadline) / 1000)),
+        disputeWindowSecs: String(Math.round(Number(values.disputeWindowHours) * 3600)),
+      });
+      setSubmit({ status: "created", intent });
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.body?.message ?? "The request was rejected." : "Failed to create the intent.";
+      setSubmit({ status: "error", message });
+    }
   }
 
   if (walletStatus !== "connected" || !address) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
-        <h1 className="text-3xl font-semibold tracking-tight">Propose a new agreement</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Request a new agreement</h1>
         <p className="mt-4 text-sm text-ink-600 dark:text-ink-300">
-          Connect your wallet to propose a new care agreement. Only the provider named in the
-          agreement may submit this call.
+          Connect your wallet to request a new care agreement.
         </p>
+      </div>
+    );
+  }
+
+  if (submit.status === "created") {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
+        <h1 className="text-3xl font-semibold tracking-tight">Request submitted</h1>
+        <div className="mt-6 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] p-6">
+          <p className="text-sm text-ink-600 dark:text-ink-300">
+            Intent <span className="font-mono">{submit.intent.id}</span> was recorded off-chain
+            with status <span className="font-medium">{submit.intent.status}</span>. Share this
+            intent ID with the provider — they must call <code>create_agreement</code> on-chain
+            themselves before it will appear as a real agreement. This request does not, by
+            itself, create or fund anything on-chain.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
-      <h1 className="text-3xl font-semibold tracking-tight">Propose a new agreement</h1>
+      <h1 className="text-3xl font-semibold tracking-tight">Request a new agreement</h1>
       <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
-        This creates the agreement directly on-chain, signed by your connected wallet as the
-        provider. Commitments must be pre-computed hashes — never enter patient or clinical data
-        directly.
+        This records an off-chain request only. The named provider must still create the
+        agreement on-chain before it can be funded — sponsors cannot create agreements directly.
+        Commitments must be pre-computed hashes — never enter patient or clinical data directly.
       </p>
 
       <form onSubmit={onSubmit} className="mt-8 space-y-5" noValidate>
         <div>
-          <label className={labelClass} htmlFor="sponsor">Sponsor wallet address</label>
-          <input id="sponsor" className={inputClass} {...field("sponsor")} placeholder="G..." />
-          {errors.sponsor && <p className={errorClass}>{errors.sponsor}</p>}
+          <label className={labelClass} htmlFor="providerWallet">Provider wallet address</label>
+          <input id="providerWallet" className={inputClass} {...field("providerWallet")} placeholder="G..." />
+          {errors.providerWallet && <p className={errorClass}>{errors.providerWallet}</p>}
         </div>
 
         <div>
-          <label className={labelClass} htmlFor="attester">Attester wallet address</label>
-          <input id="attester" className={inputClass} {...field("attester")} placeholder="G..." />
-          {errors.attester && <p className={errorClass}>{errors.attester}</p>}
+          <label className={labelClass} htmlFor="attesterWallet">Attester wallet address</label>
+          <input id="attesterWallet" className={inputClass} {...field("attesterWallet")} placeholder="G..." />
+          {errors.attesterWallet && <p className={errorClass}>{errors.attesterWallet}</p>}
         </div>
 
         <div>
@@ -202,30 +221,18 @@ export default function NewAgreementPage() {
           {errors.disputeWindowHours && <p className={errorClass}>{errors.disputeWindowHours}</p>}
         </div>
 
+        {submit.status === "error" && (
+          <p role="alert" className="text-sm text-danger-500">{submit.message}</p>
+        )}
+
         <button
           type="submit"
-          disabled={state.phase !== "idle" && state.phase !== "confirmed" && state.phase !== "failed" && state.phase !== "timeout"}
+          disabled={submit.status === "submitting"}
           className="focus-ring w-full rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
         >
-          Sign and create agreement
+          Submit request
         </button>
       </form>
-
-      {state.phase !== "idle" && (
-        <div className="mt-6">
-          <TransactionStatus state={state} />
-        </div>
-      )}
-
-      {state.phase === "confirmed" && (
-        <button
-          type="button"
-          onClick={() => router.push("/provider/agreements")}
-          className="focus-ring mt-4 rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm font-medium transition-colors hover:bg-[var(--surface)]"
-        >
-          View my agreements
-        </button>
-      )}
     </div>
   );
 }
