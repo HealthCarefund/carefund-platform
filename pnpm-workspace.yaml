@@ -2,3 +2,9 @@ packages:
   - "apps/web"
   - "packages/*"
   - "packages/sdk/generated/*"
+allowBuilds:
+  # unrs-resolver is a transitive dependency of eslint (10.11.0)'s import
+  # resolution — a native NAPI binding whose postinstall fetches the
+  # prebuilt binary for this platform. MIT licensed, published by the
+  # unrs org: https://github.com/unrs/unrs-resolver.
+  unrs-resolver: true

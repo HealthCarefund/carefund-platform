@@ -6,6 +6,11 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Next.js
+.next/
+out/
+next-env.d.ts
+
 # Go
 apps/api/api
 apps/api/carefund-api
