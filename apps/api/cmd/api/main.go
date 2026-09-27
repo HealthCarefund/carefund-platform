@@ -16,6 +16,9 @@ import (
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/config"
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/httpserver"
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/logging"
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/migrate"
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/stellarrpc"
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/store"
 )
 
 func main() {
@@ -40,7 +43,25 @@ func main() {
 	}
 	defer dbPool.Close()
 
-	server := httpserver.New(httpserver.Deps{Config: &cfg, Logger: logger, DB: dbPool})
+	applied, err := migrate.Run(ctx, dbPool)
+	if err != nil {
+		logger.Error("failed to run database migrations", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("database migrations applied", "count", len(applied), "versions", applied)
+
+	rpcClient := stellarrpc.New(cfg.StellarRPCURL, cfg.RPCTimeout)
+	defer rpcClient.Close()
+
+	dataStore := store.New(dbPool)
+
+	server := httpserver.New(httpserver.Deps{
+		Config: &cfg,
+		Logger: logger,
+		DB:     dbPool,
+		Store:  dataStore,
+		RPC:    rpcClient,
+	})
 
 	serverErr := make(chan error, 1)
 	go func() {

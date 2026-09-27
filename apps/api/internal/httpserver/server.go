@@ -11,15 +11,21 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/api"
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/config"
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/stellarrpc"
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/store"
 )
 
 // Deps are the dependencies the HTTP layer needs. DB may be nil in tests
-// that don't exercise /readyz.
+// that don't exercise /readyz. Store/RPC may be nil in tests that only
+// exercise health checks.
 type Deps struct {
 	Config *config.Config
 	Logger *slog.Logger
 	DB     *pgxpool.Pool
+	Store  *store.Store
+	RPC    *stellarrpc.Client
 }
 
 // Server wraps an *http.Server with CareFund's middleware chain and
@@ -32,6 +38,7 @@ type Server struct {
 func New(deps Deps) *Server {
 	mux := http.NewServeMux()
 	registerHealthRoutes(mux, deps)
+	api.RegisterRoutes(mux, api.Deps{Store: deps.Store, RPC: deps.RPC, Logger: deps.Logger})
 
 	handler := withRecovery(deps.Logger,
 		withRequestLogging(deps.Logger,
