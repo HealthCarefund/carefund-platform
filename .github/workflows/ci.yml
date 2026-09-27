@@ -38,6 +38,12 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
+      # stellar-cli links against libdbus for its keyring-backed key
+      # storage, which is not present on the stock ubuntu-latest runner
+      # image and fails the build with a pkg-config error otherwise.
+      - name: Install libdbus development headers
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+
       - name: Install Stellar CLI 27.0.0
         run: cargo install --locked stellar-cli --version 27.0.0
 
