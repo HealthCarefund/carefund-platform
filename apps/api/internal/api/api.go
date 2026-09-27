@@ -23,4 +23,5 @@ type Deps struct {
 func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	registerProviderRoutes(mux, deps)
 	registerAgreementRoutes(mux, deps)
+	registerIntentRoutes(mux, deps)
 }

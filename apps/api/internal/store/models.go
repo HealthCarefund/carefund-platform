@@ -45,6 +45,29 @@ type CareAgreement struct {
 	UpdatedAt                 time.Time
 }
 
+// AgreementIntent is a purely off-chain workflow record: it never causes
+// an on-chain create_agreement call by itself. Status is one of "pending",
+// "submitted", "expired", "cancelled" — application bookkeeping with no
+// on-chain counterpart.
+type AgreementIntent struct {
+	ID                        int64
+	SponsorWallet             string
+	ProviderWallet            string
+	AttesterWallet            string
+	PatientRefCommitment      []byte // exactly 32 bytes
+	ServiceCommitment         []byte // exactly 32 bytes
+	FundingAmount             string
+	SettlementAmount          string
+	SettlementAssetContractID string
+	FundingDeadline           int64
+	CareDeadline              int64
+	DisputeWindowSecs         int64
+	Status                    string
+	AgreementID               *int64
+	CreatedAt                 time.Time
+	UpdatedAt                 time.Time
+}
+
 // Attestation is the off-chain record of an attest_care call.
 type Attestation struct {
 	ID             int64

@@ -20,6 +20,13 @@ import (
 // These are genuine integration tests against the isolated CareFund
 // PostgreSQL 18.6 Docker instance (carefund-pg18, port 5439) — never the
 // host's PostgreSQL 16. They skip cleanly if it isn't reachable.
+//
+// This package and internal/store both truncate shared tables in that same
+// live instance as part of per-test cleanup. Go runs different packages'
+// test binaries concurrently by default, so running the whole module's
+// tests as plain `go test ./...` races the two packages' cleanups against
+// each other. Always run `go test -p 1 ./...` (as this repo's CI does) to
+// serialize package execution instead.
 
 func testDatabaseURL() string {
 	if v := os.Getenv("TEST_DATABASE_URL"); v != "" {
