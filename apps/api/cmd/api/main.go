@@ -1,5 +1,72 @@
-// Package main is the entry point for the CareFund API service.
-// This is a scaffold: no routes or business logic have been wired up yet.
+// Command api is the CareFund API server entry point.
 package main
 
-func main() {}
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/config"
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/httpserver"
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/logging"
+)
+
+func main() {
+	cfg, err := config.Load(os.LookupEnv)
+	if err != nil {
+		// The logger depends on cfg.LogLevel, which may be exactly what
+		// failed to validate, so this one line goes straight to stderr.
+		os.Stderr.WriteString("config error: " + err.Error() + "\n")
+		os.Exit(1)
+	}
+
+	logger := logging.New(cfg.LogLevel)
+	slog.SetDefault(logger)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	dbPool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("failed to create database pool", "error", err)
+		os.Exit(1)
+	}
+	defer dbPool.Close()
+
+	server := httpserver.New(httpserver.Deps{Config: &cfg, Logger: logger, DB: dbPool})
+
+	serverErr := make(chan error, 1)
+	go func() {
+		logger.Info("starting server", "addr", cfg.AppAddr, "env", string(cfg.AppEnv))
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+			return
+		}
+		serverErr <- nil
+	}()
+
+	select {
+	case <-ctx.Done():
+		logger.Info("shutdown signal received")
+	case err := <-serverErr:
+		if err != nil {
+			logger.Error("server failed", "error", err)
+			os.Exit(1)
+		}
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		logger.Error("graceful shutdown failed", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("shutdown complete")
+}
