@@ -6,9 +6,14 @@ import {
   createRpcServer,
   submitTransaction as submitToRpc,
   awaitWalletSignature,
+  simulateContractCall,
+  prepareContractCallTransaction,
+  createAgreementTransaction,
   WalletSigningRejectedError,
   SubmissionRejectedError,
+  SimulationFailedError,
   type WalletSigner,
+  type CreateAgreementParams,
 } from "@carefund/sdk";
 import { getStellarConfig } from "./stellar-config";
 import {
@@ -40,12 +45,59 @@ export type TransactionFlowState =
   | { phase: "failed"; hash?: string; reason: string }
   | { phase: "timeout"; hash: string };
 
+/** Resolves to an unsigned, ready-to-sign transaction plus the network passphrase it was built for. */
+export type TransactionPreparer = () => Promise<{ transaction: Transaction; networkPassphrase: string }>;
+
 export interface RunTransactionParams {
   agreementId: string;
   operation: PrepareTransactionOperation;
   sourcePublicKey: string;
   attestationCommitment?: string;
   resolution?: "Resume" | "Settle" | "Refund";
+}
+
+/**
+ * Prepares one of the seven agreement-lifecycle operations via the Go
+ * backend (build + simulate + assemble happen server-side; see
+ * apps/api/internal/api/transactions.go, Commit 13). Use this for
+ * fund/cancel/attest_care/open_dispute/expire/settle/resolve_dispute.
+ */
+export function prepareViaBackend(params: RunTransactionParams): TransactionPreparer {
+  return async () => {
+    const prepared = await prepareAgreementTransaction(params.agreementId, {
+      operation: params.operation,
+      sourcePublicKey: params.sourcePublicKey,
+      attestationCommitment: params.attestationCommitment,
+      resolution: params.resolution,
+    });
+    const envelope = TransactionBuilder.fromXDR(prepared.unsignedTransactionXdr, prepared.networkPassphrase);
+    if (!("signatures" in envelope)) {
+      throw new Error("Prepared transaction is not a signable envelope");
+    }
+    return { transaction: envelope as Transaction, networkPassphrase: prepared.networkPassphrase };
+  };
+}
+
+/**
+ * Prepares a create_agreement call directly against RPC, client-side.
+ * There is deliberately no backend endpoint for this one operation (see
+ * apps/api/internal/api/transactions.go's comment): create_agreement
+ * belongs to an off-chain agreement_intent, not an existing agreementId,
+ * so it doesn't fit that endpoint's URL shape. packages/sdk already
+ * builds exactly this (Commit 5); this just adds the same
+ * simulate-then-assemble step the backend performs for the other seven.
+ */
+export function prepareCreateAgreement(params: CreateAgreementParams): TransactionPreparer {
+  return async () => {
+    const config = getStellarConfig();
+    const rpc = createRpcServer(config);
+    const built = await createAgreementTransaction(config, rpc, params);
+    // Throws SimulationFailedError itself if the simulation reports the
+    // call would fail — never silently proceeds to signing on a bad call.
+    await simulateContractCall(rpc, built);
+    const prepared = await prepareContractCallTransaction(rpc, built);
+    return { transaction: prepared, networkPassphrase: config.networkPassphrase };
+  };
 }
 
 const CONFIRMATION_ATTEMPTS = 15;
@@ -65,38 +117,21 @@ export function useTransactionFlow(getSigner: () => WalletSigner) {
   }, []);
 
   const run = useCallback(
-    async (params: RunTransactionParams) => {
+    async (prepare: TransactionPreparer) => {
       cancelled.current = false;
-      const config = getStellarConfig();
 
       try {
         setState({ phase: "preparing" });
         setState({ phase: "simulating" });
-        const prepared = await prepareAgreementTransaction(params.agreementId, {
-          operation: params.operation,
-          sourcePublicKey: params.sourcePublicKey,
-          attestationCommitment: params.attestationCommitment,
-          resolution: params.resolution,
-        });
+        const { transaction, networkPassphrase } = await prepare();
         if (cancelled.current) return;
 
         setState({ phase: "awaiting_signature" });
-        const unsignedEnvelope = TransactionBuilder.fromXDR(
-          prepared.unsignedTransactionXdr,
-          prepared.networkPassphrase,
-        );
-        if (!("signatures" in unsignedEnvelope) || typeof unsignedEnvelope.toXDR !== "function") {
-          throw new Error("Prepared transaction is not a signable envelope");
-        }
-        const signed = await awaitWalletSignature(
-          getSigner(),
-          unsignedEnvelope as Transaction,
-          prepared.networkPassphrase,
-        );
+        const signed = await awaitWalletSignature(getSigner(), transaction, networkPassphrase);
         if (cancelled.current) return;
 
         setState({ phase: "submitting" });
-        const rpc = createRpcServer(config);
+        const rpc = createRpcServer(getStellarConfig());
         const { hash } = await submitToRpc(rpc, signed);
         if (cancelled.current) return;
         setState({ phase: "submitted", hash });
@@ -141,6 +176,9 @@ function describeError(err: unknown): string {
   }
   if (err instanceof SubmissionRejectedError) {
     return `Submission was rejected: ${err.status}`;
+  }
+  if (err instanceof SimulationFailedError) {
+    return err.message;
   }
   if (err instanceof ApiError) {
     return err.body?.message ?? "The request was rejected.";

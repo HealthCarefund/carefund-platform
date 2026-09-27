@@ -184,6 +184,33 @@ export function listProviderAttesters(wallet: string): Promise<AttesterResponse[
   return request(`/api/v1/providers/${encodeURIComponent(wallet)}/attesters`);
 }
 
+export interface AgreementsPageResponse {
+  agreements: AgreementResponse[];
+  nextCursor?: string;
+}
+
+export function listProviderAgreements(
+  wallet: string,
+  options?: { cursor?: string; limit?: number },
+): Promise<AgreementsPageResponse> {
+  const params = new URLSearchParams();
+  if (options?.cursor) params.set("cursor", options.cursor);
+  if (options?.limit) params.set("limit", String(options.limit));
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return request(`/api/v1/providers/${encodeURIComponent(wallet)}/agreements${query}`);
+}
+
+export function listSponsorAgreements(
+  wallet: string,
+  options?: { cursor?: string; limit?: number },
+): Promise<AgreementsPageResponse> {
+  const params = new URLSearchParams();
+  if (options?.cursor) params.set("cursor", options.cursor);
+  if (options?.limit) params.set("limit", String(options.limit));
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return request(`/api/v1/sponsors/${encodeURIComponent(wallet)}/agreements${query}`);
+}
+
 export function getAgreement(agreementId: string): Promise<AgreementResponse> {
   return request(`/api/v1/agreements/${encodeURIComponent(agreementId)}`);
 }
