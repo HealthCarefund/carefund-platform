@@ -8,12 +8,14 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/config"
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/stellarrpc"
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/store"
 )
 
 // Deps are the dependencies every handler in this package may need.
 type Deps struct {
+	Config *config.Config
 	Store  *store.Store
 	RPC    *stellarrpc.Client
 	Logger *slog.Logger
@@ -24,4 +26,5 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	registerProviderRoutes(mux, deps)
 	registerAgreementRoutes(mux, deps)
 	registerIntentRoutes(mux, deps)
+	registerTransactionPrepRoutes(mux, deps)
 }

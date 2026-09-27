@@ -38,7 +38,7 @@ type Server struct {
 func New(deps Deps) *Server {
 	mux := http.NewServeMux()
 	registerHealthRoutes(mux, deps)
-	api.RegisterRoutes(mux, api.Deps{Store: deps.Store, RPC: deps.RPC, Logger: deps.Logger})
+	api.RegisterRoutes(mux, api.Deps{Config: deps.Config, Store: deps.Store, RPC: deps.RPC, Logger: deps.Logger})
 
 	handler := withRecovery(deps.Logger,
 		withRequestLogging(deps.Logger,

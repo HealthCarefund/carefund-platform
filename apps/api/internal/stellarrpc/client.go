@@ -12,6 +12,7 @@ import (
 
 	"github.com/stellar/go-stellar-sdk/clients/rpcclient"
 	protocol "github.com/stellar/go-stellar-sdk/protocols/rpc"
+	"github.com/stellar/go-stellar-sdk/txnbuild"
 )
 
 // Client is the typed RPC access layer used by the rest of apps/api.
@@ -87,4 +88,12 @@ func (c *Client) GetLedgerEntries(ctx context.Context, keysBase64 []string) (pro
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 	return c.rpc.GetLedgerEntries(ctx, protocol.GetLedgerEntriesRequest{Keys: keysBase64})
+}
+
+// LoadAccount fetches an account's current sequence number, for building
+// a transaction with that account as the source.
+func (c *Client) LoadAccount(ctx context.Context, address string) (txnbuild.Account, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	return c.rpc.LoadAccount(ctx, address)
 }
