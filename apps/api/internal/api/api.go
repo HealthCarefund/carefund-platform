@@ -22,4 +22,5 @@ type Deps struct {
 // RegisterRoutes wires every /api/v1/... route onto mux.
 func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	registerProviderRoutes(mux, deps)
+	registerAgreementRoutes(mux, deps)
 }

@@ -48,7 +48,9 @@ func newTestDeps(t *testing.T) (Deps, *http.ServeMux) {
 	t.Cleanup(func() {
 		truncateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_, _ = pool.Exec(truncateCtx, `TRUNCATE TABLE attesters, providers RESTART IDENTITY CASCADE`)
+		_, _ = pool.Exec(truncateCtx, `TRUNCATE TABLE
+			contract_events, attestations, care_agreements, attesters, providers
+			RESTART IDENTITY CASCADE`)
 		pool.Close()
 	})
 
