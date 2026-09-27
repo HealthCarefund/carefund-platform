@@ -1,0 +1,12 @@
+{
+  "name": "carefund-platform",
+  "private": true,
+  "packageManager": "pnpm@12.5.1",
+  "engines": {
+    "node": "24.21.0",
+    "pnpm": "12.5.1"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r run typecheck"
+  }
+}

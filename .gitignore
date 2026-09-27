@@ -1,2 +1,15 @@
 /target
 Cargo.lock
+
+# Node / pnpm
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Go
+apps/api/api
+apps/api/carefund-api
+
+# Env
+.env
+
