@@ -40,7 +40,7 @@ the mirror from the chain — never the other way around.
 
 **The wallet is the only signer.** Neither `apps/api` nor `apps/web` ever
 holds, receives, or transmits a private key. The Go API only builds,
-simulates, and returns *unsigned* transaction XDR for six of the seven
+simulates, and returns *unsigned* transaction XDR for seven of the eight
 agreement-lifecycle operations (`fund`, `cancel`, `attest_care`,
 `open_dispute`, `expire`, `settle`, `resolve_dispute`); the frontend has
 the browser wallet (Freighter, via `packages/sdk`) sign it and submits the
