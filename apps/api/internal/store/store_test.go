@@ -64,8 +64,8 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := pool.Exec(ctx, `TRUNCATE TABLE
-		audit_records, idempotency_keys, contract_events, transaction_refs,
-		attestations, care_agreements, attesters, providers
+		audit_records, idempotency_keys, agreement_intents, contract_events,
+		transaction_refs, attestations, care_agreements, attesters, providers
 		RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Errorf("truncating test tables: %v", err)

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -45,63 +46,66 @@ const (
 	operationResolveDispute = "resolve_dispute"
 )
 
+const operationPrepareTransaction = "prepare_agreement_transaction"
+
 func registerTransactionPrepRoutes(mux *http.ServeMux, deps Deps) {
-	mux.HandleFunc("POST /api/v1/agreements/{agreementId}/transactions", func(w http.ResponseWriter, r *http.Request) {
-		id, ok := parseAgreementID(w, r.PathValue("agreementId"))
-		if !ok {
-			return
-		}
+	mux.HandleFunc("POST /api/v1/agreements/{agreementId}/transactions", withIdempotency(deps, operationPrepareTransaction,
+		func(w http.ResponseWriter, r *http.Request, body []byte) (int, any) {
+			id, ok := parseAgreementID(w, r.PathValue("agreementId"))
+			if !ok {
+				return 0, nil
+			}
 
-		agreement, err := deps.Store.GetAgreement(r.Context(), id)
-		if errors.Is(err, store.ErrNotFound) {
-			httpx.WriteNotFound(w, "agreement not found")
-			return
-		}
-		if err != nil {
-			httpx.WriteInternal(w, deps.Logger, err, "GetAgreement")
-			return
-		}
+			agreement, err := deps.Store.GetAgreement(r.Context(), id)
+			if errors.Is(err, store.ErrNotFound) {
+				httpx.WriteNotFound(w, "agreement not found")
+				return 0, nil
+			}
+			if err != nil {
+				httpx.WriteInternal(w, deps.Logger, err, "GetAgreement")
+				return 0, nil
+			}
 
-		var req prepareTransactionRequest
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&req); err != nil {
-			httpx.WriteValidationError(w, "malformed request body", []httpx.FieldIssue{
-				{Field: "body", Issue: err.Error()},
+			var req prepareTransactionRequest
+			decoder := json.NewDecoder(bytes.NewReader(body))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&req); err != nil {
+				httpx.WriteValidationError(w, "malformed request body", []httpx.FieldIssue{
+					{Field: "body", Issue: err.Error()},
+				})
+				return 0, nil
+			}
+
+			args, issues := buildOperationArgs(id, agreement, req)
+			if len(issues) > 0 {
+				httpx.WriteValidationError(w, "invalid transaction preparation request", issues)
+				return 0, nil
+			}
+
+			unsignedXDR, err := sorobanenc.PrepareContractCall(r.Context(), deps.RPC, deps.RPC, sorobanenc.ContractCallRequest{
+				ContractID:        deps.Config.CareAgreementContractID,
+				Method:            req.Operation,
+				Args:              args,
+				SourcePublicKey:   req.SourcePublicKey,
+				NetworkPassphrase: deps.Config.StellarNetworkPassphrase,
+				TimeoutSeconds:    transactionPrepTimeoutSeconds,
 			})
-			return
-		}
+			var simErr *sorobanenc.SimulationError
+			if errors.As(err, &simErr) {
+				httpx.WriteContractError(w, simErr.Error())
+				return 0, nil
+			}
+			if err != nil {
+				httpx.WriteInternal(w, deps.Logger, err, "PrepareContractCall")
+				return 0, nil
+			}
 
-		args, issues := buildOperationArgs(id, agreement, req)
-		if len(issues) > 0 {
-			httpx.WriteValidationError(w, "invalid transaction preparation request", issues)
-			return
-		}
-
-		unsignedXDR, err := sorobanenc.PrepareContractCall(r.Context(), deps.RPC, deps.RPC, sorobanenc.ContractCallRequest{
-			ContractID:        deps.Config.CareAgreementContractID,
-			Method:            req.Operation,
-			Args:              args,
-			SourcePublicKey:   req.SourcePublicKey,
-			NetworkPassphrase: deps.Config.StellarNetworkPassphrase,
-			TimeoutSeconds:    transactionPrepTimeoutSeconds,
-		})
-		var simErr *sorobanenc.SimulationError
-		if errors.As(err, &simErr) {
-			httpx.WriteContractError(w, simErr.Error())
-			return
-		}
-		if err != nil {
-			httpx.WriteInternal(w, deps.Logger, err, "PrepareContractCall")
-			return
-		}
-
-		writeJSON(w, http.StatusOK, prepareTransactionResponse{
-			UnsignedTransactionXDR: unsignedXDR,
-			Network:                string(deps.Config.StellarNetwork),
-			NetworkPassphrase:      deps.Config.StellarNetworkPassphrase,
-		})
-	})
+			return http.StatusOK, prepareTransactionResponse{
+				UnsignedTransactionXDR: unsignedXDR,
+				Network:                string(deps.Config.StellarNetwork),
+				NetworkPassphrase:      deps.Config.StellarNetworkPassphrase,
+			}
+		}))
 }
 
 // buildOperationArgs validates the request against the current agreement

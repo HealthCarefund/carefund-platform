@@ -49,6 +49,7 @@ func postIntent(t *testing.T, mux http.Handler, req createIntentRequest) *httpte
 	rec := httptest.NewRecorder()
 	httpReq := httptest.NewRequest(http.MethodPost, "/api/v1/agreements/intents", bytes.NewReader(body))
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set(idempotencyKeyHeader, uniqueIdempotencyKey(t))
 	mux.ServeHTTP(rec, httpReq)
 	return rec
 }
@@ -96,6 +97,7 @@ func TestCreateIntent_RejectsUnknownFields(t *testing.T) {
 	body := []byte(`{"sponsorWallet":"G","extraField":"nope"}`)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/agreements/intents", bytes.NewReader(body))
+	req.Header.Set(idempotencyKeyHeader, uniqueIdempotencyKey(t))
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"math/big"
@@ -71,50 +72,53 @@ func toIntentResponse(in *store.AgreementIntent) intentResponse {
 	return resp
 }
 
+const operationCreateAgreementIntent = "create_agreement_intent"
+
 func registerIntentRoutes(mux *http.ServeMux, deps Deps) {
-	mux.HandleFunc("POST /api/v1/agreements/intents", func(w http.ResponseWriter, r *http.Request) {
-		var req createIntentRequest
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&req); err != nil {
-			httpx.WriteValidationError(w, "malformed request body", []httpx.FieldIssue{
-				{Field: "body", Issue: err.Error()},
+	mux.HandleFunc("POST /api/v1/agreements/intents", withIdempotency(deps, operationCreateAgreementIntent,
+		func(w http.ResponseWriter, r *http.Request, body []byte) (int, any) {
+			var req createIntentRequest
+			decoder := json.NewDecoder(bytes.NewReader(body))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&req); err != nil {
+				httpx.WriteValidationError(w, "malformed request body", []httpx.FieldIssue{
+					{Field: "body", Issue: err.Error()},
+				})
+				return 0, nil
+			}
+
+			issues := validateCreateIntentRequest(req)
+			if len(issues) > 0 {
+				httpx.WriteValidationError(w, "invalid agreement intent", issues)
+				return 0, nil
+			}
+
+			patientRef, _ := hex.DecodeString(req.PatientRefCommitment)
+			serviceRef, _ := hex.DecodeString(req.ServiceCommitment)
+			fundingDeadline, _ := strconv.ParseInt(req.FundingDeadline, 10, 64)
+			careDeadline, _ := strconv.ParseInt(req.CareDeadline, 10, 64)
+			disputeWindow, _ := strconv.ParseInt(req.DisputeWindowSecs, 10, 64)
+
+			created, err := deps.Store.CreateAgreementIntent(r.Context(), store.AgreementIntent{
+				SponsorWallet:             req.SponsorWallet,
+				ProviderWallet:            req.ProviderWallet,
+				AttesterWallet:            req.AttesterWallet,
+				PatientRefCommitment:      patientRef,
+				ServiceCommitment:         serviceRef,
+				FundingAmount:             req.FundingAmount,
+				SettlementAmount:          req.SettlementAmount,
+				SettlementAssetContractID: req.SettlementAssetContractID,
+				FundingDeadline:           fundingDeadline,
+				CareDeadline:              careDeadline,
+				DisputeWindowSecs:         disputeWindow,
 			})
-			return
-		}
+			if err != nil {
+				httpx.WriteInternal(w, deps.Logger, err, "CreateAgreementIntent")
+				return 0, nil
+			}
 
-		issues := validateCreateIntentRequest(req)
-		if len(issues) > 0 {
-			httpx.WriteValidationError(w, "invalid agreement intent", issues)
-			return
-		}
-
-		patientRef, _ := hex.DecodeString(req.PatientRefCommitment)
-		serviceRef, _ := hex.DecodeString(req.ServiceCommitment)
-		fundingDeadline, _ := strconv.ParseInt(req.FundingDeadline, 10, 64)
-		careDeadline, _ := strconv.ParseInt(req.CareDeadline, 10, 64)
-		disputeWindow, _ := strconv.ParseInt(req.DisputeWindowSecs, 10, 64)
-
-		created, err := deps.Store.CreateAgreementIntent(r.Context(), store.AgreementIntent{
-			SponsorWallet:             req.SponsorWallet,
-			ProviderWallet:            req.ProviderWallet,
-			AttesterWallet:            req.AttesterWallet,
-			PatientRefCommitment:      patientRef,
-			ServiceCommitment:         serviceRef,
-			FundingAmount:             req.FundingAmount,
-			SettlementAmount:          req.SettlementAmount,
-			SettlementAssetContractID: req.SettlementAssetContractID,
-			FundingDeadline:           fundingDeadline,
-			CareDeadline:              careDeadline,
-			DisputeWindowSecs:         disputeWindow,
-		})
-		if err != nil {
-			httpx.WriteInternal(w, deps.Logger, err, "CreateAgreementIntent")
-			return
-		}
-
-		writeJSON(w, http.StatusCreated, toIntentResponse(created))
-	})
+			return http.StatusCreated, toIntentResponse(created)
+		}))
 }
 
 // validateCreateIntentRequest checks format, then the same amount/deadline

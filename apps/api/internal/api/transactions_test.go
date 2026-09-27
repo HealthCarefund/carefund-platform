@@ -152,6 +152,7 @@ func TestPrepareTransaction_RejectsUnknownFields(t *testing.T) {
 	body := []byte(`{"operation":"fund","sourcePublicKey":"G","unexpected":true}`)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/agreements/205/transactions", bytes.NewReader(body))
+	req.Header.Set(idempotencyKeyHeader, uniqueIdempotencyKey(t))
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -205,6 +206,7 @@ func postJSON(t *testing.T, mux http.Handler, path string, body any) *httptest.R
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(idempotencyKeyHeader, uniqueIdempotencyKey(t))
 	mux.ServeHTTP(rec, req)
 	return rec
 }

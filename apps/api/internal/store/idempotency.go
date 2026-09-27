@@ -60,6 +60,20 @@ func (s *Store) GetIdempotencyRecord(ctx context.Context, key, operation string)
 	return &r, nil
 }
 
+// DeleteIdempotencyRecord removes a claimed (key, operation) pair. Used
+// only to un-claim a key whose attempt never produced a workflow action
+// (e.g. request validation failed before anything was created) — a
+// validation failure is not a real use of the key, so a retry with a
+// corrected request (even one that hashes differently) must be allowed to
+// claim it fresh, not be permanently blocked by the failed attempt's hash.
+func (s *Store) DeleteIdempotencyRecord(ctx context.Context, key, operation string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM idempotency_keys WHERE key_value = $1 AND operation = $2`, key, operation)
+	if err != nil {
+		return fmt.Errorf("deleting idempotency record %q/%q: %w", key, operation, err)
+	}
+	return nil
+}
+
 // UpdateIdempotencyResult records the final outcome ("completed" or
 // "failed") of a previously-claimed idempotency key, so a later replay of
 // the same key returns this result instead of re-running the operation.
