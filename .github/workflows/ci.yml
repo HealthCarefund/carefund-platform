@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  contracts:
+    name: Contracts (Rust/Soroban)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the exact channel (1.98.1) and components
+      # (rustfmt, clippy) — dtolnay/rust-toolchain reads it directly.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.1"
+          components: rustfmt, clippy
+          targets: wasm32v1-none
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: Install Stellar CLI 27.0.0
+        run: cargo install --locked stellar-cli --version 27.0.0
+
+      - name: stellar contract build (provider-registry)
+        run: stellar contract build --package provider-registry
+
+      - name: stellar contract build (care-agreement)
+        run: stellar contract build --package care-agreement
+
+  api:
+    name: API (Go)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6-bookworm
+        env:
+          POSTGRES_USER: carefund
+          POSTGRES_PASSWORD: carefund_dev
+          POSTGRES_DB: carefund
+        ports:
+          - 5439:5432
+        options: >-
+          --health-cmd "pg_isready -U carefund"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://carefund:carefund_dev@localhost:5439/carefund
+      # No live Testnet dependency belongs in ordinary CI runs — the one
+      # test that genuinely calls Testnet RPC (transactions_test.go) skips
+      # itself cleanly when this is set, per that file's own doc comment.
+      SKIP_LIVE_NETWORK_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.1"
+          cache-dependency-path: apps/api/go.sum
+
+      - name: gofmt --check
+        working-directory: apps/api
+        run: |
+          diff=$(gofmt -l .)
+          if [ -n "$diff" ]; then
+            echo "$diff"
+            exit 1
+          fi
+
+      - name: go vet
+        working-directory: apps/api
+        run: go vet ./...
+
+      - name: go build
+        working-directory: apps/api
+        run: go build ./...
+
+      - name: go test (serialized — see internal/api/providers_test.go)
+        working-directory: apps/api
+        run: go test -p 1 ./...
+
+      - name: go test -race
+        working-directory: apps/api
+        run: go test -race -p 1 ./...
+
+  web:
+    name: Web (Next.js)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.21.0"
+
+      - name: Enable pnpm via Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.5.1 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm --filter @carefund/web run lint
+
+      - name: Typecheck
+        run: pnpm --filter @carefund/web run typecheck
+
+      - name: Unit tests
+        run: pnpm --filter @carefund/web run test
+
+      - name: Build
+        run: pnpm --filter @carefund/web run build
+
+      - name: Install Playwright browsers
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: E2E tests
+        working-directory: apps/web
+        run: pnpm exec playwright test
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7

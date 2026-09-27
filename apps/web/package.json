@@ -11,7 +11,9 @@
     "start": "next start",
     "lint": "eslint .",
     "pretypecheck": "pnpm --filter @carefund/sdk run build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@carefund/sdk": "workspace:*",
@@ -22,6 +24,8 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "24.19.0",
     "@types/react": "19.3.0",
@@ -30,6 +34,7 @@
     "eslint-config-next": "16.3.3",
     "postcss": "8.5.28",
     "tailwindcss": "4.3.3",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "5.0.2"
   }
 }

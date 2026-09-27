@@ -57,7 +57,7 @@ export function SiteNav() {
         <nav
           id="primary-nav-mobile"
           aria-label="Primary"
-          className="absolute inset-x-0 top-full flex flex-col gap-1 border-b border-[var(--border-subtle)] bg-[var(--background)] px-4 py-3 text-sm font-medium sm:hidden"
+          className="absolute inset-x-0 top-full z-50 flex flex-col gap-1 border-b border-[var(--border-subtle)] bg-[var(--background)] px-4 py-3 text-sm font-medium sm:hidden"
         >
           {NAV_LINKS.map((link) => (
             <Link

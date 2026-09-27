@@ -11,7 +11,7 @@ export function WalletButton() {
 
   if (status === "checking") {
     return (
-      <span className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm text-ink-400">
+      <span className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm text-ink-500 dark:text-ink-400">
         Checking wallet&hellip;
       </span>
     );

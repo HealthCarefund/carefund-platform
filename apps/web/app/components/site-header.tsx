@@ -5,7 +5,7 @@ import { SiteNav } from "./site-nav";
 
 export function SiteHeader() {
   return (
-    <header className="relative border-b border-[var(--border-subtle)] bg-[var(--background)]/80 backdrop-blur">
+    <header className="relative z-10 border-b border-[var(--border-subtle)] bg-[var(--background)]/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
         <Link href="/" className="focus-ring flex items-center gap-2 rounded">
           <span

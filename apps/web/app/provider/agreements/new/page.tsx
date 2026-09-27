@@ -3,9 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import {
-  isStellarAddress,
-  isCommitmentHash,
-  isStellarAmount,
   toStellarAddress,
   toCommitmentHash,
   toStellarAmount,
@@ -15,21 +12,12 @@ import {
 import { useWallet } from "@/lib/wallet-context";
 import { useTransactionFlow, prepareCreateAgreement } from "@/lib/use-transaction-flow";
 import { TransactionStatus } from "@/app/components/transaction-status";
+import { validateAgreementFormValues, type AgreementFormValues } from "@/lib/agreement-form-validation";
 
-interface FormValues {
-  sponsor: string;
-  attester: string;
-  patientRefCommitment: string;
-  serviceCommitment: string;
-  fundingAmount: string;
-  settlementAmount: string;
-  fundingDeadline: string;
-  careDeadline: string;
-  disputeWindowHours: string;
-}
+type FormValues = AgreementFormValues;
 
 const EMPTY: FormValues = {
-  sponsor: "",
+  counterpartyWallet: "",
   attester: "",
   patientRefCommitment: "",
   serviceCommitment: "",
@@ -39,37 +27,6 @@ const EMPTY: FormValues = {
   careDeadline: "",
   disputeWindowHours: "72",
 };
-
-function validate(values: FormValues): Partial<Record<keyof FormValues, string>> {
-  const errors: Partial<Record<keyof FormValues, string>> = {};
-  if (!isStellarAddress(values.sponsor)) errors.sponsor = "Enter a valid Stellar address (G...).";
-  if (!isStellarAddress(values.attester)) errors.attester = "Enter a valid Stellar address (G...).";
-  if (!isCommitmentHash(values.patientRefCommitment)) {
-    errors.patientRefCommitment = "Enter a 64-character lowercase hex commitment hash, not patient data.";
-  }
-  if (!isCommitmentHash(values.serviceCommitment)) {
-    errors.serviceCommitment = "Enter a 64-character lowercase hex commitment hash.";
-  }
-  if (!isStellarAmount(values.fundingAmount) || BigInt(values.fundingAmount || "0") <= BigInt(0)) {
-    errors.fundingAmount = "Enter a positive whole-number amount in the settlement asset's smallest unit.";
-  }
-  if (!isStellarAmount(values.settlementAmount) || BigInt(values.settlementAmount || "0") <= BigInt(0)) {
-    errors.settlementAmount = "Enter a positive whole-number amount.";
-  }
-  const fundingDeadlineMs = Date.parse(values.fundingDeadline);
-  if (Number.isNaN(fundingDeadlineMs) || fundingDeadlineMs <= Date.now()) {
-    errors.fundingDeadline = "Choose a funding deadline in the future.";
-  }
-  const careDeadlineMs = Date.parse(values.careDeadline);
-  if (Number.isNaN(careDeadlineMs) || careDeadlineMs <= fundingDeadlineMs) {
-    errors.careDeadline = "Choose a care deadline after the funding deadline.";
-  }
-  const disputeHours = Number(values.disputeWindowHours);
-  if (!Number.isFinite(disputeHours) || disputeHours <= 0) {
-    errors.disputeWindowHours = "Enter a positive number of hours.";
-  }
-  return errors;
-}
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--background)] px-3 py-2 text-sm focus-ring";
@@ -91,7 +48,7 @@ export default function NewAgreementPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!address) return;
-    const validationErrors = validate(values);
+    const validationErrors = validateAgreementFormValues(values, "sponsor");
     setErrors(validationErrors);
     if (Object.keys(validationErrors).length > 0) return;
 
@@ -99,7 +56,7 @@ export default function NewAgreementPage() {
     await run(
       prepareCreateAgreement({
         provider: toStellarAddress(address),
-        sponsor: toStellarAddress(values.sponsor),
+        sponsor: toStellarAddress(values.counterpartyWallet),
         attester: toStellarAddress(values.attester),
         patientRefCommitment: toCommitmentHash(values.patientRefCommitment),
         serviceCommitment: toCommitmentHash(values.serviceCommitment),
@@ -137,9 +94,9 @@ export default function NewAgreementPage() {
 
       <form onSubmit={onSubmit} className="mt-8 space-y-5" noValidate>
         <div>
-          <label className={labelClass} htmlFor="sponsor">Sponsor wallet address</label>
-          <input id="sponsor" className={inputClass} {...field("sponsor")} placeholder="G..." />
-          {errors.sponsor && <p className={errorClass}>{errors.sponsor}</p>}
+          <label className={labelClass} htmlFor="counterpartyWallet">Sponsor wallet address</label>
+          <input id="counterpartyWallet" className={inputClass} {...field("counterpartyWallet")} placeholder="G..." />
+          {errors.counterpartyWallet && <p className={errorClass}>{errors.counterpartyWallet}</p>}
         </div>
 
         <div>
