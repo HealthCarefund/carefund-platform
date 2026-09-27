@@ -97,3 +97,19 @@ func (c *Client) LoadAccount(ctx context.Context, address string) (txnbuild.Acco
 	defer cancel()
 	return c.rpc.LoadAccount(ctx, address)
 }
+
+// GetEvents fetches contract events, used by the reconciliation loop to
+// mirror on-chain events into contract_events.
+func (c *Client) GetEvents(ctx context.Context, request protocol.GetEventsRequest) (protocol.GetEventsResponse, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	return c.rpc.GetEvents(ctx, request)
+}
+
+// GetLatestLedger returns the most recent ledger sequence known to RPC,
+// used to bound how far the event-reconciliation loop scans.
+func (c *Client) GetLatestLedger(ctx context.Context) (protocol.GetLatestLedgerResponse, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	return c.rpc.GetLatestLedger(ctx)
+}

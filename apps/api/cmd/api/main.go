@@ -17,6 +17,7 @@ import (
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/httpserver"
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/logging"
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/migrate"
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/reconcile"
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/stellarrpc"
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/store"
 )
@@ -62,6 +63,12 @@ func main() {
 		Store:  dataStore,
 		RPC:    rpcClient,
 	})
+
+	reconciler := reconcile.New(dataStore, rpcClient, logger, cfg.ReconciliationInterval,
+		cfg.ProviderRegistryContractID, cfg.CareAgreementContractID)
+	reconcileCtx, stopReconcile := context.WithCancel(context.Background())
+	defer stopReconcile()
+	go reconciler.Run(reconcileCtx)
 
 	serverErr := make(chan error, 1)
 	go func() {
