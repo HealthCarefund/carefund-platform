@@ -10,7 +10,7 @@ jobs:
     name: Contracts (Rust/Soroban)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # rust-toolchain.toml pins the exact channel (1.98.1) and components
       # (rustfmt, clippy): dtolnay/rust-toolchain reads it directly.
@@ -78,7 +78,7 @@ jobs:
       # itself cleanly when this is set, per that file's own doc comment.
       SKIP_LIVE_NETWORK_TESTS: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v5
         with:
@@ -114,7 +114,7 @@ jobs:
     name: Web (Next.js)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
