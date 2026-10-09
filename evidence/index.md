@@ -30,6 +30,10 @@ and something outside this session's control prevents verification).
 | resolve_dispute admin action | no admin UI exists in this application | 2026-09-27 | KNOWN LIMITATION |
 | Wrong-network signing prevention | unit tested in `packages/sdk/src/config.ts`, not exercised against a second live network | 2026-09-27 | LOGICALLY COVERED |
 | Recovery and failure-injection scenarios | see `evidence/recovery-2026-09-27.md` | 2026-09-27 | see file |
-| Dependency scans | see security section of final block report | 2026-09-27 | pending |
-| CI | `.github/workflows/ci.yml`, GitHub Actions run status | pending | pending |
-| Branch protection | pending | pending | pending |
+| Rust dependency scan | `cargo audit`: 0 vulnerabilities, 1 unmaintained-crate warning (`paste`, transitive via soroban-sdk) | 2026-09-27 | VERIFIED |
+| Go dependency scan | `govulncheck ./...`: found and fixed GO-2026-5970 (`golang.org/x/text`), 0 vulnerabilities in called code after the fix | 2026-09-27 | VERIFIED |
+| Node dependency scan | `pnpm audit` and `pnpm audit --prod`: no known vulnerabilities | 2026-09-27 | VERIFIED |
+| Contract security fix: dispute window overflow | `contracts/care-agreement/src/lib.rs` create_agreement now rejects an overflowing care_deadline/dispute_window_secs combination, regression test added | 2026-09-27 | VERIFIED (fixed, tested, deployed WASM not yet redeployed to the Testnet contract from this block; see limitations) |
+| CI actually passes on GitHub Actions | run `36360910262` on commit `5908905`, all three jobs (Contracts, API, Web) green, observed via `gh run watch` and `gh api .../check-runs`, not inferred from YAML | 2026-09-27 | VERIFIED |
+| Dependabot configured for every ecosystem present | `.github/dependabot.yml` (npm, cargo, gomod, github-actions), file confirmed present on GitHub via API; vulnerability alerts confirmed enabled (204 from `/vulnerability-alerts`) | 2026-09-27 | VERIFIED |
+| Branch protection enabled on main | `gh api repos/HealthCarefund/carefund-platform/branches/main/protection`, read back fresh after configuring: required status checks (strict, the three real check names above), PR required, force push disabled, deletion disabled, admin bypass left available (not enforced) | 2026-09-27 | VERIFIED |
