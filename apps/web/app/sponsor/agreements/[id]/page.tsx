@@ -96,7 +96,7 @@ export default function SponsorAgreementDetailPage() {
   const inActionableState = state.phase === "idle" || state.phase === "confirmed" || state.phase === "failed" || state.phase === "timeout";
 
   const canFund = isMine && agreement.state === "Requested";
-  const canSettle = isMine && agreement.state === "CareConfirmed" && nowSecs() > careDeadline;
+  const canSettle = isMine && agreement.state === "CareConfirmed" && nowSecs() > disputeWindowEnd;
   const canDispute =
     isMine &&
     (agreement.state === "Funded" || agreement.state === "CareConfirmed") &&

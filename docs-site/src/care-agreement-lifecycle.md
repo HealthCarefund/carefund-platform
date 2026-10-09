@@ -87,19 +87,20 @@ A sponsor or provider defines the contract parameters:
 - **Execution**: Records `attestation_commitment`, timestamp, and transitions state to `CareConfirmed`.
 
 ### 4. Settlement (`settle`)
-- **Caller**: Sponsor (`sponsor.require_auth()`).
-- **Prerequisites**: Agreement must be in `CareConfirmed` state and current ledger timestamp must be `> care_deadline`.
-- **Execution**: Transfers `settlement_amount` from contract to `provider`. State transitions to `Settled`. Any excess (`funding_amount - settlement_amount`) remains in contract or is handled per agreement design.
+- **Caller**: Anyone (permissionless deterministic finalization).
+- **Prerequisites**: Agreement must be in `CareConfirmed` state and current ledger timestamp must be `> care_deadline + dispute_window_secs` (dispute window has elapsed).
+- **Execution**: Transfers `settlement_amount` from contract to `provider`, and atomically refunds any surplus (`funding_amount - settlement_amount`) to `sponsor`. State transitions to `Settled`. Contract escrow balance drops to zero.
 
 ### 5. Disputes (`open_dispute` & `resolve_dispute`)
-- **Opening**: Either sponsor or provider can invoke `open_dispute` during the active dispute window.
+- **Opening**: Either sponsor or provider can invoke `open_dispute` during the active dispute window (`care_deadline < now <= care_deadline + dispute_window_secs`).
 - **Resolution**: Contract admin invokes `resolve_dispute`:
   - `DisputeResolution::Resume`: Restores original pre-dispute state.
-  - `DisputeResolution::Settle`: Immediately settles funds to provider.
-  - `DisputeResolution::Refund`: Returns full escrowed funds to sponsor.
+  - `DisputeResolution::Settle`: Disburses `settlement_amount` to provider, refunds surplus (`funding_amount - settlement_amount`) to sponsor, and marks agreement `Settled`.
+  - `DisputeResolution::Refund`: Returns full deposited `funding_amount` to sponsor and marks agreement `Refunded`.
 
 ### 6. Expiration and Cancellation
 - **`cancel`**: Provider can cancel an un-funded `Requested` agreement.
 - **`expire`**: Anyone can trigger expiration if deadlines lapse:
-  - If in `Requested` after `funding_deadline`: state becomes `Expired`.
-  - If in `Funded` after `care_deadline` without attestation: state becomes `Expired` and escrow is automatically returned to sponsor.
+  - If in `Requested` after `funding_deadline`: state becomes `Expired` with zero token transfers.
+  - If in `Funded` after `care_deadline + dispute_window_secs` without attestation: state becomes `Expired` and the full deposited escrow is automatically refunded to sponsor.
+  - Agreements in `CareConfirmed` cannot be expired (`InvalidState`).

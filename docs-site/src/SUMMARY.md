@@ -11,6 +11,7 @@
 - [Provider and Attester Registry](provider-and-attester-registry.md)
 - [Care Agreement Lifecycle](care-agreement-lifecycle.md)
 - [Funding and Settlement](funding-and-settlement.md)
+- [Financial Safety and Invariants](financial-safety-and-invariants.md)
 
 ## Developer Guide
 - [Getting Started](getting-started.md)

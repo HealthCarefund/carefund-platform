@@ -19,7 +19,7 @@ Sponsors are philanthropic organizations, donor funds, or individuals allocating
 - **Responsibilities**:
   - Creates or reviews care agreements with designated providers.
   - Deposits settlement funds into contract escrow before the funding deadline (`fund`).
-  - Triggers settlement once care is attested and the care deadline has elapsed (`settle`).
+  - Receives automated refund of any surplus escrow upon settlement.
   - Opens disputes if service irregularities occur (`open_dispute`).
   - Reclaims funds if agreements expire without funding or care attestation (`expire`).
 - **Authorization**: Protected on-chain by `sponsor.require_auth()`.
@@ -30,7 +30,7 @@ Providers are clinics, hospitals, or accredited medical practitioners delivering
   - Registers their Stellar address and operational reference commitment via administrator onboarding.
   - Proposes agreements specifying funding amount, settlement amount, and deadlines.
   - Cancels requested agreements if terms change prior to sponsor funding (`cancel`).
-  - Receives automated token transfer of the settlement amount upon successful settlement (`settle`).
+  - Receives automated token transfer of the settlement amount upon successful settlement (`settle`), and can trigger settlement once the dispute window elapses.
   - Opens disputes if attestation is improperly withheld (`open_dispute`).
 - **Authorization**: Protected on-chain by `provider.require_auth()`. Must maintain `ActorStatus::Active` in `provider-registry`.
 
@@ -55,10 +55,10 @@ Attesters are neutral verification agents, such as clinical auditors, program of
 | Deposit Escrow | Sponsor | `fund` | Requested, before `funding_deadline` |
 | Cancel Agreement | Provider | `cancel` | Requested |
 | Attest Care | Attester | `attest_care` | Funded, before `care_deadline` |
-| Settle Agreement | Sponsor | `settle` | CareConfirmed, past `care_deadline` |
+| Settle Agreement | Anyone (Permissionless) | `settle` | CareConfirmed, past `care_deadline + dispute_window_secs` |
 | Open Dispute | Sponsor or Provider | `open_dispute` | Funded or CareConfirmed, within dispute window |
 | Resolve Dispute | Admin | `resolve_dispute` | Disputed |
-| Expire Agreement | Anyone | `expire` | Requested (past funding deadline) or Funded (past care deadline without attestation) |
+| Expire Agreement | Anyone (Permissionless) | `expire` | Requested (past funding deadline) or Funded (past care deadline plus dispute window without attestation) |
 
 ---
 

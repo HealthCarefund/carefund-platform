@@ -202,10 +202,9 @@ export function expireAgreementTransaction(
 
 export interface SettleAgreementParams extends BaseCallOptions {
   readonly agreementId: AgreementId;
-  readonly sponsor: StellarAddress;
 }
 
-/** Sponsor-authorized: `sourcePublicKey` must be `sponsor`. */
+/** Permissionless on-chain (no `require_auth`), but still needs a fee-paying source account. */
 export function settleAgreementTransaction(
   config: StellarClientConfig,
   server: AccountLookupClient,
@@ -215,7 +214,7 @@ export function settleAgreementTransaction(
     config,
     server,
     "settle",
-    { agreement_id: BigInt(params.agreementId), sponsor: params.sponsor },
+    { agreement_id: BigInt(params.agreementId) },
     params,
   );
 }

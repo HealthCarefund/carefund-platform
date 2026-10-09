@@ -125,6 +125,15 @@ this document.
   deprecated in favor of the `#[contractevent]` macro. This is a real,
   tracked migration, not a security issue.
 
+## Escrow safety and financial invariants
+
+In Block 3A, the protocol established and verified five core financial invariants:
+- **Full Escrow Conservation**: Settlement atomically disburses the agreed settlement amount to the provider and refunds any surplus escrow (funding amount minus settlement amount) back to the sponsor. No tokens remain stranded in contract escrow.
+- **Dispute Window Non-Overlap**: Settlement is strictly prohibited while the dispute window remains active, preventing race conditions against dispute filings.
+- **Permissionless Finalization**: Settlement parameters are immutable on-chain; any caller may trigger settlement once the dispute window elapses, preventing counterparty settlement veto.
+- **Escrow Refund on Expiration**: Agreements expiring in the Funded state without attestation automatically refund the full deposit back to the sponsor. Agreements with attested care cannot be expired.
+- **Conserved Dispute Resolution**: Dispute resolution via `Settle` disburses the settlement amount to the provider and refunds surplus to the sponsor; resolution via `Refund` returns the full deposit to the sponsor.
+
 ## Testnet status
 
 Real, currently deployed Testnet contracts and a complete real lifecycle

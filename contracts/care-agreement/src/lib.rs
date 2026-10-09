@@ -528,9 +528,11 @@ impl CareAgreementContract {
         Ok(())
     }
 
-    /// Expire an agreement when care deadline has passed.
-    /// Callable by anyone after care deadline.
-    /// Transitions state from Funded or CareConfirmed to Expired.
+    /// Expire an agreement when deadlines have passed.
+    /// Callable by anyone.
+    /// - For Requested: allowed after funding_deadline; no token transfer.
+    /// - For Funded: allowed after care_deadline + dispute_window_secs; refunds full deposit to sponsor.
+    /// - For CareConfirmed: rejected (attested care cannot be expired).
     pub fn expire(env: Env, agreement_id: u64) -> Result<(), AgreementError> {
         // Load agreement
         let key = DataKey::Agreement(agreement_id);
@@ -540,21 +542,57 @@ impl CareAgreementContract {
             .get(&key)
             .ok_or(AgreementError::AgreementNotFound)?;
 
-        // Validate state is Funded or CareConfirmed
-        if agreement.state != AgreementState::Funded
-            && agreement.state != AgreementState::CareConfirmed
-        {
-            return Err(AgreementError::InvalidState);
-        }
-
-        // Validate care deadline has passed
         let current_time = env.ledger().timestamp();
-        if current_time <= agreement.care_deadline {
-            return Err(AgreementError::CareDeadlineNotPassed);
+
+        match agreement.state {
+            AgreementState::Requested => {
+                if current_time < agreement.funding_deadline {
+                    return Err(AgreementError::FundingDeadlineNotReached);
+                }
+                agreement.state = AgreementState::Expired;
+            }
+            AgreementState::Funded => {
+                let dispute_window_end = agreement
+                    .care_deadline
+                    .checked_add(agreement.dispute_window_secs)
+                    .ok_or(AgreementError::ArithmeticOverflow)?;
+
+                if current_time <= agreement.care_deadline {
+                    return Err(AgreementError::CareDeadlineNotPassed);
+                }
+                if current_time <= dispute_window_end {
+                    return Err(AgreementError::DisputeWindowActive);
+                }
+
+                // Load settlement asset (token contract address)
+                let settlement_asset: Address = env
+                    .storage()
+                    .instance()
+                    .get(&DataKey::SettlementAsset)
+                    .ok_or(AgreementError::Unauthorized)?;
+
+                // Atomically refund full funding_amount from contract to sponsor
+                use soroban_sdk::IntoVal;
+                env.invoke_contract::<()>(
+                    &settlement_asset,
+                    &soroban_sdk::Symbol::new(&env, "transfer"),
+                    soroban_sdk::Vec::from_array(
+                        &env,
+                        [
+                            env.current_contract_address().into_val(&env),
+                            agreement.sponsor.clone().into_val(&env),
+                            agreement.funding_amount.into_val(&env),
+                        ],
+                    ),
+                );
+
+                agreement.state = AgreementState::Expired;
+            }
+            _ => {
+                return Err(AgreementError::InvalidState);
+            }
         }
 
-        // Update agreement state to Expired
-        agreement.state = AgreementState::Expired;
         env.storage().persistent().set(&key, &agreement);
         env.storage().persistent().extend_ttl(
             &key,
@@ -665,7 +703,10 @@ impl CareAgreementContract {
 
         // Validate current time is within dispute window (after care deadline but before dispute window closes)
         let current_time = env.ledger().timestamp();
-        let dispute_window_end = agreement.care_deadline + agreement.dispute_window_secs;
+        let dispute_window_end = agreement
+            .care_deadline
+            .checked_add(agreement.dispute_window_secs)
+            .ok_or(AgreementError::ArithmeticOverflow)?;
 
         if current_time <= agreement.care_deadline {
             return Err(AgreementError::DisputeWindowActive);
@@ -705,13 +746,11 @@ impl CareAgreementContract {
         Ok(())
     }
 
-    /// Settle an agreement by transferring settlement amount to provider.
-    /// Requires sponsor authorization.
+    /// Settle an agreement by transferring settlement amount to provider
+    /// and returning any surplus (funding_amount - settlement_amount) to sponsor.
+    /// Callable deterministically by anyone after the dispute window has elapsed.
     /// Transitions state from CareConfirmed to Settled.
-    /// Transfers settlement_amount from contract to provider.
-    pub fn settle(env: Env, agreement_id: u64, sponsor: Address) -> Result<(), AgreementError> {
-        sponsor.require_auth();
-
+    pub fn settle(env: Env, agreement_id: u64) -> Result<(), AgreementError> {
         // Load agreement
         let key = DataKey::Agreement(agreement_id);
         let mut agreement: Agreement = env
@@ -725,15 +764,18 @@ impl CareAgreementContract {
             return Err(AgreementError::InvalidState);
         }
 
-        // Validate sponsor matches
-        if agreement.sponsor != sponsor {
-            return Err(AgreementError::Unauthorized);
-        }
-
-        // Validate current time is past care deadline
+        // Validate current time is past the dispute window
         let current_time = env.ledger().timestamp();
+        let dispute_window_end = agreement
+            .care_deadline
+            .checked_add(agreement.dispute_window_secs)
+            .ok_or(AgreementError::ArithmeticOverflow)?;
+
         if current_time <= agreement.care_deadline {
             return Err(AgreementError::CareDeadlineNotPassed);
+        }
+        if current_time <= dispute_window_end {
+            return Err(AgreementError::DisputeWindowActive);
         }
 
         // Load settlement asset (token contract address)
@@ -743,8 +785,9 @@ impl CareAgreementContract {
             .get(&DataKey::SettlementAsset)
             .ok_or(AgreementError::Unauthorized)?;
 
-        // Transfer settlement amount from contract to provider
         use soroban_sdk::IntoVal;
+
+        // 1. Transfer settlement amount from contract to provider
         env.invoke_contract::<()>(
             &settlement_asset,
             &soroban_sdk::Symbol::new(&env, "transfer"),
@@ -757,6 +800,23 @@ impl CareAgreementContract {
                 ],
             ),
         );
+
+        // 2. Refund surplus (funding_amount - settlement_amount) to sponsor if positive
+        let surplus = agreement.funding_amount - agreement.settlement_amount;
+        if surplus > 0 {
+            env.invoke_contract::<()>(
+                &settlement_asset,
+                &soroban_sdk::Symbol::new(&env, "transfer"),
+                soroban_sdk::Vec::from_array(
+                    &env,
+                    [
+                        env.current_contract_address().into_val(&env),
+                        agreement.sponsor.clone().into_val(&env),
+                        surplus.into_val(&env),
+                    ],
+                ),
+            );
+        }
 
         // Update agreement state to Settled
         agreement.state = AgreementState::Settled;
@@ -835,7 +895,7 @@ impl CareAgreementContract {
                 }
             }
             DisputeResolution::Settle => {
-                // Settle: transfer settlement_amount to provider and mark as Settled
+                // Settle: transfer settlement_amount to provider, return surplus to sponsor, mark as Settled
                 env.invoke_contract::<()>(
                     &settlement_asset,
                     &soroban_sdk::Symbol::new(&env, "transfer"),
@@ -848,6 +908,21 @@ impl CareAgreementContract {
                         ],
                     ),
                 );
+                let surplus = agreement.funding_amount - agreement.settlement_amount;
+                if surplus > 0 {
+                    env.invoke_contract::<()>(
+                        &settlement_asset,
+                        &soroban_sdk::Symbol::new(&env, "transfer"),
+                        soroban_sdk::Vec::from_array(
+                            &env,
+                            [
+                                env.current_contract_address().into_val(&env),
+                                agreement.sponsor.clone().into_val(&env),
+                                surplus.into_val(&env),
+                            ],
+                        ),
+                    );
+                }
                 agreement.state = AgreementState::Settled;
             }
             DisputeResolution::Refund => {

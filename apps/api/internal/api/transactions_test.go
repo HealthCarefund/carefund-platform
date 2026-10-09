@@ -162,6 +162,21 @@ func TestPrepareTransaction_RejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestBuildOperationArgs_SettleIsPermissionless(t *testing.T) {
+	agreement := sampleAgreement(206)
+	thirdParty := "G" + repeatChar('B', 55)
+	args, issues := buildOperationArgs(206, &agreement, prepareTransactionRequest{
+		Operation:       operationSettle,
+		SourcePublicKey: thirdParty,
+	})
+	if len(issues) > 0 {
+		t.Fatalf("unexpected issues: %v", issues)
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 ScVal argument for settle, got %d", len(args))
+	}
+}
+
 // TestPrepareTransaction_FundLiveTestnet exercises the full
 // build->simulate->assemble pipeline against the real care-agreement
 // contract deployed to Testnet and a genuine on-chain agreement (id 1,
