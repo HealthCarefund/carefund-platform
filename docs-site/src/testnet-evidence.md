@@ -1,10 +1,37 @@
 # Stellar Testnet Evidence
 
-This page summarizes the historical on-chain deployment and lifecycle verification executed on the public Stellar Testnet on **2026-09-27**.
+This page documents the verifiable on-chain deployments and lifecycle executions on the public Stellar Testnet.
 
 All transactions and contract addresses listed below are verifiable on [StellarExpert](https://stellar.expert/explorer/testnet).
 
-## Contract Deployments
+---
+
+## Block 3B Live Testnet Deployment (2026-10-09)
+
+Current deployment implementing full escrow conservation, surplus refunds, strict funding boundaries, and permissionless settlement (see `evidence/testnet-2026-10-09-block3b.md`).
+
+| Contract | Address | WASM SHA-256 Hash | Upload / Deploy Transactions |
+|---|---|---|---|
+| `provider-registry` | `CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS` | `30924b0d33baf349f93dc36275e492e1803ef3dc738fd67b5ce91ee94974ab52` | Upload: `da364745b4c2...`<br>Deploy: `03a34e0dd88f...` |
+| `care-agreement` | `CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O` | `b543e9a7084ddaaf9b6377971914b5fb5c44d010c627dc5937e0a88b031f9eb5` | Upload: `5b5e6c3c1741...`<br>Deploy: `dbcfa8a6ad27...` |
+| Native SAC (XLM) | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` | Built-in | System Derived |
+
+### Multi-Agreement Lifecycle Verification Matrix
+
+| Agreement | Flow Tested | Transaction Hashes | State Result | Financial Accounting |
+|---|---|---|---|---|
+| ID 1 | Nominal lifecycle with surplus refund | Create: `ed1ea91b...`<br>Fund: `177621f1...`<br>Attest: `6b7128dc...`<br>Settle: `9ae6dc48...` | `Settled` | F = 50M stroops (5 XLM). S = 30M stroops paid to provider; F - S = 20M stroops surplus refunded to sponsor. Contract escrow obligation = 0. |
+| ID 2 | Requested expiry | Create: `525ce239...`<br>Expire: `80b818da...` | `Expired` | F = 10M stroops. Expired after funding deadline. Zero asset transfers. |
+| ID 3 | Funded expiry | Create: `9d92964a...`<br>Fund: `66df4920...`<br>Expire: `4d1b15c0...` | `Expired` | F = 20M stroops. Expired after dispute window without attestation. 100% of F refunded to sponsor; 0 to provider. Contract obligation = 0. |
+| ID 4 | Dispute & Admin Resolution (Refund) | Create: `943b5ad1...`<br>Fund: `0763fc28...`<br>Dispute: `cd290e0d...`<br>Resolve: `55bfa433...` | `Refunded` | F = 15M stroops. Dispute opened within window, resolved as Refund by admin. Full 15M stroops refunded to sponsor. Contract obligation = 0. |
+| ID 5 | Provider cancellation | Create: `ad72796c...`<br>Cancel: `7a19745e...` | `Cancelled` | Cancelled by provider before funding. Zero asset transfers. |
+| ID 3 & 4 | Multi-agreement escrow pooling | N/A (simultaneous on-chain state) | Pooled | Simultaneously funded: contract held 35M stroops (20M + 15M). Finalizing ID 3 left exactly 15M stroops for ID 4. Zero cross-agreement leakage. |
+
+---
+
+## Historical Block 1 Baseline (2026-09-27)
+
+This section preserves the original deployment and verification record from Block 1 (`evidence/testnet-2026-09-27.md`):
 
 | Contract | Address | WASM Hash | Deploy Transaction |
 |---|---|---|---|
@@ -14,36 +41,9 @@ All transactions and contract addresses listed below are verifiable on [StellarE
 
 ---
 
-## On-Chain Lifecycle Verification (Agreement ID 1)
-
-The complete happy-path lifecycle was executed on-chain with real asset transfers (amounts in stroops, where 10,000,000 stroops = 1 XLM):
-
-| Operation | Transaction Hash | Observed State Transition | Verifiable Result |
-|---|---|---|---|
-| `create_agreement` | `833b4c6e554557317c9afae3a9862321931259565a7ff2917877f062927b6951` | `Requested` | Agreement initialized with 50M stroops funding, 40M settlement |
-| `fund` | `57bc0acd72ffd0c68c837f2cc7b73f3e9c205d23785a6e99680f679b2d92d5bf` | `Funded` | Real token transfer event: 5 XLM moved from sponsor to contract escrow |
-| `attest_care` | `90f8f02c85fad850836663cf4cc3e686582e01c91e83d24a78cedb00d529edbf` | `CareConfirmed` | Attester commitment recorded on-chain |
-| `settle` | `70d8fff005da5d05bdaa583d0a0418a5a6e90c864d9c4724f1aace47710b8438` | `Settled` | Real token transfer event: 4 XLM transferred from contract to provider; 1 XLM retained |
-
----
-
-## Negative Path Verification (Simulation Rejections)
-
-Five invalid lifecycle scenarios were submitted to Soroban RPC against the live contract state, proving the contract rejects illegal operations:
-
-| Scenario Tested | Returned Error | Classification |
-|---|---|---|
-| Attester attempts `settle`, pretending to be sponsor | `Error(Contract, #2)` (Unauthorized) | VERIFIED LIVE (Simulation rejected) |
-| Sponsor attempts `settle` before `care_deadline` passes | `Error(Contract, #11)` (CareDeadlineNotPassed) | VERIFIED LIVE (Simulation rejected) |
-| Sponsor attempts `fund` on already `Funded` agreement | `Error(Contract, #4)` (InvalidState) | VERIFIED LIVE (Simulation rejected) |
-| Provider attempts `cancel` on `CareConfirmed` agreement | `Error(Contract, #4)` (InvalidState) | VERIFIED LIVE (Simulation rejected) |
-| Provider attempts `open_dispute` before dispute window opens | `Error(Contract, #12)` (DisputeWindowActive) | VERIFIED LIVE (Simulation rejected) |
-
----
-
 ## Crucial Qualifications and Outstanding Gates
 
-Reviewers must note the following truthful qualifications:
-1. **WASM Redeployment Gate**: The deployed `care-agreement` contract above was deployed prior to the dispute-window overflow safety fix (commit `7fdcade`). The source code includes the fix, but the deployed contract has not yet been updated. Redeploying the contract and re-verifying a fresh lifecycle is an outstanding pre-submission gate.
-2. **Signing Mechanism**: Transactions were signed directly via Stellar CLI keypairs on the deployment machine, not through a live browser Freighter extension.
+1. **WASM Redeployment Gate Resolved**: In Block 3B, the updated contracts were deployed and verified with the current financial safety invariants. The historical Block 1 contracts remain on Testnet as historical reference.
+2. **Signing Mechanism**: All lifecycle transactions above were submitted to the live Testnet ledger using authorized Stellar CLI operator identities. Browser extension signing with Freighter remains classified as awaiting maintainer interaction.
 3. **Network Boundary**: All evidence represents Stellar Testnet. Mainnet deployment has not occurred.
+

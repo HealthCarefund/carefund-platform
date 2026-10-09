@@ -135,14 +135,12 @@ In Block 3A and the pre-deployment hardening pass, the protocol established and 
 - **Strict Funding Boundary Timing**: Expiration of an un-funded agreement is strictly permitted only after the funding deadline has passed (`now > funding_deadline`). At `now == funding_deadline`, funding is permitted and expiry is rejected with `FundingDeadlineNotReached`.
 - **Escrow Refund on Expiration**: Agreements expiring in the Funded state without attestation automatically refund the full deposit back to the sponsor. Agreements with attested care cannot be expired.
 - **Conserved Dispute Resolution**: Dispute resolution via `Settle` disburses the settlement amount to the provider and refunds surplus to the sponsor; resolution via `Refund` returns the full deposit to the sponsor.
-- **Storage Durability and Archival Restoration**: Agreement entries use persistent storage with proactive TTL extensions. Inactive agreements that become archived after 30 days do not lose custody tokens; entries can be restored via `RestoreFootprintOp` to complete settlement.
-
+- **Storage Durability and Archival Restoration**: Agreement entries use persistent storage with proactive TTL extensions. Inactive agreements that become archived after 30 days do not lose custody tokens. Since Stellar Protocol 23, simulation automatically populates the restore list so that contract invocations auto-restore archived entries within InvokeHostFunctionOp, with RestoreFootprintOp available as a standalone fallback.
+ 
 ## Testnet status
 
-Real, currently deployed Testnet contracts and a complete real lifecycle
-verification (deployment, initialization, registration, creation,
-funding, attestation, and settlement, each with an actual on chain
-transaction hash and an independently checked resulting balance) are
-recorded in `evidence/testnet-2026-09-27.md`. This is Testnet only. No
-claim is made here about mainnet, and no claim is made about production
+Real, currently deployed Testnet contracts and complete lifecycle
+verifications are recorded in `evidence/testnet-2026-09-27.md` (historical Block 1 baseline)
+and `evidence/testnet-2026-10-09-block3b.md` (Block 3B deployment and multi-agreement lifecycle matrix).
+This is Testnet only. No claim is made here about mainnet, and no claim is made about production
 readiness.

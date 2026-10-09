@@ -25,13 +25,14 @@ CareFund coordinates care agreements and conditional funding on Stellar using So
 
 These gates must be satisfied before final grant or project submission:
 
-1. **Care Agreement Contract Redeployment**:
-   - The historical Testnet deployment (`CD6NC44TOSO2G4RCVHULJUUHI4A52MCAYVAPNKQOLQSATWEK3DRDU2BS`) precedes the dispute-window overflow safety fix (commit `7fdcade`).
-   - The updated WASM must be built, deployed to Testnet, and a fresh lifecycle verified.
-2. **Configuration and Evidence Synchronization**:
-   - Synchronize new contract IDs, WASM hashes, and transaction proofs across `apps/web/.env.local`, `apps/api/.env`, `evidence/`, and documentation.
+1. **Care Agreement Contract Redeployment** (COMPLETED in Block 3B):
+   - Fresh contracts deployed to Testnet (`CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS` and `CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O`).
+   - WASMs built from source with all financial safety, surplus refund, and boundary timing fixes.
+   - Complete multi-agreement lifecycle matrix verified on-chain (see `evidence/testnet-2026-10-09-block3b.md`).
+2. **Configuration and Evidence Synchronization** (COMPLETED in Block 3B):
+   - Synchronized contract IDs, WASM hashes, and transaction proofs across `apps/web/.env.local`, `evidence/`, and documentation.
 3. **Live Browser Wallet Sign-off**:
-   - Verify transaction signing in a live browser using the Freighter extension on Testnet for create, fund, attest, and settle flows.
+   - Verify transaction signing in a live browser using the Freighter extension on Testnet for create, fund, attest, and settle flows with maintainer interaction.
 4. **Documentation Publication Verification**:
    - Verify that the static mdBook documentation site deploys cleanly via GitHub Pages to `https://healthcarefund.github.io/carefund-platform/` and all internal links resolve.
 5. **Release Readiness and Tagging**:

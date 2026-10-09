@@ -126,19 +126,22 @@ CareFund documents all claims using a transparent evidence taxonomy in [evidence
 | Area | Status | Verification Summary |
 |---|---|---|
 | Toolchain Pinned Versions | VERIFIED | Validated via `scripts/check-toolchain.sh` |
-| Contracts Deployed to Testnet | VERIFIED | Deployed on 2026-09-27 (`evidence/testnet-2026-09-27.md`) |
-| Full On-Chain Lifecycle | VERIFIED | Create, fund, attest, and settle executed with native SAC tokens |
-| Negative Path Enforcement | VERIFIED LIVE | 5 invalid lifecycle operations simulation-rejected by live contract |
-| API Live Testnet Roundtrip | TESTED LOCALLY | `TestPrepareTransaction_FundLiveTestnet` verified against live contract |
-| Database Restart Recovery | TESTED LOCALLY | Idempotency and reconciliation cursors survive service recreation |
-| Continuous Integration | VERIFIED | Real GitHub Actions workflow passing on ubuntu-latest |
-| Dispute Window Overflow Fix | TESTED LOCALLY | Fix in commit `7fdcade` unit tested; contract redeployment pending |
-| Escrow Conservation & Surplus Refund | TESTED LOCALLY | Invariant verified in 114 Rust contract tests, SDK, and Go API |
-| Browser Wallet Testnet Sign-off | UNVERIFIED | Historical Testnet actions used CLI; live browser signing pending |
+| Contracts Deployed to Testnet | VERIFIED | Block 3B deployed 2026-10-09 (`evidence/testnet-2026-10-09-block3b.md`); historical Block 1 on 2026-09-27 (`evidence/testnet-2026-09-27.md`) |
+| Full On-Chain Lifecycle | VERIFIED | Multi-agreement matrix: nominal settlement with surplus refund, requested expiry, funded expiry, dispute refund |
+| Negative Path Enforcement | VERIFIED LIVE | 9 invalid lifecycle scenarios simulation-rejected by live contract with exact ScError codes |
+| API Live Testnet Roundtrip | VERIFIED LIVE | `TestPrepareTransaction_FundLiveTestnet` and `TestLookupTransaction_SuccessLiveTestnet` verified against live contract |
+| Database Restart Recovery | VERIFIED LIVE | Background reconciliation worker confirms on-chain transactions and persists cursor across service restart |
+| Continuous Integration | VERIFIED | GitHub Actions workflows passing (Contracts, API, Web including SDK tests, Docs) |
+| Dispute Window Overflow Fix | VERIFIED LIVE | Fix deployed to Testnet in Block 3B (`care_agreement` WASM hash `b543e9a7...`) |
+| Escrow Conservation & Surplus Refund | VERIFIED LIVE | Real token-conservation accounting verified on Testnet down to stroop precision |
+| Browser Wallet Testnet Sign-off | AWAITING INTERACTION | Automated CLI execution verified on Testnet; live browser Freighter extension signing awaits maintainer interaction |
 | External Security Audit | KNOWN LIMITATION | No independent third-party smart contract audit performed |
 
-### Pre-Submission Redeployment Gate
-The deployed `care-agreement` contract on Testnet (`CD6NC44TOSO2G4RCVHULJUUHI4A52MCAYVAPNKQOLQSATWEK3DRDU2BS`) precedes the dispute-window overflow safety fix (commit `7fdcade`) and the Block 3A financial safety remediation (commit `efd63d8`). Redeploying the updated WASM, verifying a fresh Testnet lifecycle, and synchronizing addresses across configuration files is an explicit pre-submission gate.
+### Testnet Contract Instances (Block 3B)
+- **Provider Registry**: `CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS`
+- **Care Agreement**: `CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O`
+- **Settlement Asset (Native XLM SAC)**: `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`
+Historical Block 1 instances (`CCGF5Y7...` and `CD6NC4...`) remain on Testnet for historical reference.
 
 ## Security Model and Limitations
 
