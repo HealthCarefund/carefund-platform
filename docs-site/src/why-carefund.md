@@ -23,11 +23,11 @@ Instead of choosing between trust and administrative friction, CareFund introduc
 [Provider] <-- (4. Settle / Claim Funds) -----------+
 ```
 
-### 1. Guaranteed Liquidity with Conditional Release
-Sponsors fund agreements upfront into the `care-agreement` contract escrow. Providers can see that funds are locked and earmarked specifically for their care delivery, eliminating non-payment risk. However, the contract locks those funds until explicit criteria are satisfied.
+### 1. Verified Escrow with Conditional Release
+Sponsors fund agreements upfront into the `care-agreement` contract escrow. Providers can see that funds are locked and earmarked specifically for their care delivery, reducing non-payment risk. The contract holds those funds until explicit criteria are satisfied.
 
 ### 2. Independent Third-Party Attestation
-Neither the sponsor nor the provider unilaterally controls fund release. An independent accredited attester (such as a supervising medical officer, social worker, or program monitor) records an on-chain attestation commitment confirming that care was completed according to protocol.
+Neither the sponsor nor the provider unilaterally controls fund release. An authorized attester records an on-chain attestation commitment confirming that care was completed according to protocol.
 
 ### 3. Clear Time-Gating and Dispute Windows
 Agreements define distinct deadlines:
@@ -35,11 +35,13 @@ Agreements define distinct deadlines:
 - **Care Deadline**: The period during which care must be delivered and attested.
 - **Dispute Window**: A defined grace period following attestation or care delivery allowing legitimate objections before settlement executes.
 
-### 4. Zero Sensitive Data Exposure
-Medical privacy is paramount. Neither the Stellar blockchain nor CareFund's off-chain PostgreSQL database ever records patient names, medical record numbers, diagnoses, or procedure descriptions. Instead, parties compute SHA-256 commitments off-chain:
-- `patient_ref_commitment`: 32-byte hash identifying the patient record known only to the clinic.
+### 4. Off-Chain Commitment Architecture
+Neither the Stellar blockchain nor CareFund's off-chain PostgreSQL database stores plaintext patient names, medical record numbers, diagnoses, or procedure descriptions. Instead, parties compute 32-byte cryptographic commitments off-chain:
+- `patient_ref_commitment`: 32-byte hash referencing the patient record held in the provider's external system.
 - `service_commitment`: 32-byte hash describing the agreed clinical protocol.
 - `attestation_commitment`: 32-byte hash verifying clinical completion notes.
+
+Callers are responsible for computing privacy-safe commitments. CareFund makes no claim of HIPAA or GDPR compliance.
 
 ## Why Stellar and Soroban?
 

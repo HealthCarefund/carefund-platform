@@ -11,7 +11,7 @@
   <a href="https://github.com/HealthCarefund/carefund-platform/actions/workflows/ci.yml"><img src="https://github.com/HealthCarefund/carefund-platform/actions/workflows/ci.yml/badge.svg" alt="CI Status" /></a>
   <a href="https://github.com/HealthCarefund/carefund-platform/actions/workflows/docs.yml"><img src="https://github.com/HealthCarefund/carefund-platform/actions/workflows/docs.yml/badge.svg" alt="Documentation Status" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0" /></a>
-  <a href="./evidence/testnet-2026-09-27.md"><img src="https://img.shields.io/badge/stellar-testnet-teal.svg" alt="Stellar Testnet: Evidenced" /></a>
+  <a href="./evidence/testnet-2026-10-09-block3b.md"><img src="https://img.shields.io/badge/stellar-testnet-teal.svg" alt="Stellar Testnet: Evidenced" /></a>
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@
 
 CareFund coordinates care agreements between healthcare sponsors, medical providers, and independent attesters, holding conditional funding in escrow and executing settlement autonomously through Soroban smart contracts on the Stellar network.
 
-CareFund operates strictly as a non-custodial funding coordination and verification protocol. It is not health insurance, an underwriter, an electronic health records system, a patient diagnostic service, or a custodial wallet.
+CareFund operates as a funding coordination and verification protocol. CareFund does not custody user signing keys. Users sign with their own wallet, while agreement funds are held temporarily in escrow by the Soroban smart contract under the protocol's conditional release rules. It is not health insurance, an underwriter, an electronic health records system, a patient diagnostic service, or a custodial wallet service.
 
 ## Why CareFund Exists
 
@@ -35,7 +35,7 @@ Charitable and subsidized healthcare programs frequently confront three systemic
 2. **Provider Cash-Flow Strain**: Requiring clinics to deliver care upfront and wait months for donor reimbursement strains community health operations.
 3. **Privacy Vulnerabilities**: Centralized grant tracking often exposes sensitive patient identities and diagnostic notes to donor auditing staff.
 
-CareFund eliminates these trade-offs by locking donor funds in verifiable smart contract escrow upfront, releasing reimbursement to clinics only when accredited third-party attesters verify clinical completion on-chain, and replacing all personal data with opaque 32-byte cryptographic commitments.
+CareFund is designed to reduce these trade-offs by holding donor funds in verifiable smart contract escrow upfront, releasing reimbursement to clinics only when authorized attesters verify clinical completion on-chain, and representing patient and service references through 32-byte cryptographic commitments.
 
 ## System Components
 
@@ -58,11 +58,11 @@ apps/
 
 - **The blockchain is the source of truth**: PostgreSQL (`apps/api`) stores only off-chain workflow metadata (agreement intents, idempotency reservations, and a queryable mirror of ledger state). Background workers reconcile the mirror from the chain, never the reverse.
 - **The wallet is the only signer**: Neither the Go API nor the Next.js web application holds private keys. Transactions are prepared unsigned, signed client-side via the Freighter browser extension, and submitted directly to Soroban RPC.
-- **Zero clinical data exposure**: Patient and service identifiers exist solely as 32-byte SHA-256 commitments computed off-chain by clinics prior to submission.
+- **Commitment Hashes**: Plaintext patient and clinical data must never be submitted to CareFund. Callers precompute 32-byte commitment hashes outside the protocol before creating or attesting agreements. The web application accepts precomputed 64-character hexadecimal hashes; it does not transform plaintext patient records. Deterministic SHA-256 hashing alone does not provide legal anonymization, and CareFund does not claim HIPAA or GDPR compliance.
 
 ## Core Protocol Workflow
 
-1. **Provider Onboarding**: The contract administrator registers accredited clinics in `provider-registry` (`register_provider`) and authorizes bound attesters (`register_attester`).
+1. **Provider Onboarding**: The contract administrator registers authorized clinics in `provider-registry` (`register_provider`) and authorizes bound attesters (`register_attester`). The registry records administrative authorization; it does not independently verify external medical accreditation.
 2. **Agreement Proposal**: A registered provider initializes a care agreement (`create_agreement`) specifying token amounts, deadlines, cryptographic commitment hashes, and authorized counterparty addresses. The contract requires provider authorization.
 3. **Escrow Deposit**: The sponsor deposits funds (`fund`) into the `care-agreement` contract via the Stellar Asset Contract (SAC).
 4. **Care Attestation**: Upon procedure completion, the designated attester verifies clinical delivery and submits an attestation hash (`attest_care`).
@@ -146,8 +146,8 @@ Historical Block 1 instances (`CCGF5Y7...` and `CD6NC4...`) remain on Testnet fo
 ## Security Model and Limitations
 
 - **Authorization**: On-chain actions strictly require cryptographic signatures via `require_auth()`.
-- **Zero Key Custody**: Private keys are never handled by the backend or web server.
-- **Privacy**: Patient and clinical records are never stored; only 32-byte opaque hashes exist in contracts and databases.
+- **No Private Key Custody**: Private signing keys are never handled or held by the backend or web server. Escrow funds are held directly by the Soroban care-agreement contract until release or refund conditions are met.
+- **Privacy Boundaries**: Raw patient records and clinical documentation should never be submitted to CareFund. Contracts and databases store only precomputed 32-byte commitments. Predictable or low-entropy identifiers can remain vulnerable to correlation if naively hashed; external callers are responsible for constructing privacy-safe commitments. CareFund makes no HIPAA or GDPR compliance claims.
 - **Admin Dispute UI**: Because the application currently lacks an administrative authentication layer, `resolve_dispute` has no web interface to prevent exposing escrow redirection to unauthorized users.
 - **No Production Claims**: CareFund is an open-source development prototype deployed on Stellar Testnet. It is not currently audited or approved for production clinical operations.
 

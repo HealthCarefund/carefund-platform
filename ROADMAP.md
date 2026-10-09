@@ -11,13 +11,14 @@ CareFund coordinates care agreements and conditional funding on Stellar using So
 - **Go Backend API**: Off-chain metadata mirror in PostgreSQL, unsigned transaction preparation, idempotency tracking, and chain reconciliation loop.
 - **TypeScript Packages**: `@carefund/types` for domain primitives, `@carefund/sdk` for simulation, signing, submission, and transaction status polling.
 - **Next.js Web Application**: Provider, sponsor, and attester workflows with client-side Freighter signing.
-- **Historical Testnet Evidence**: Real lifecycle execution on Stellar Testnet on 2026-09-27 (creation, funding with native XLM SAC, care attestation, time-gated settlement, and simulation-rejected failure paths).
+- **Verified Testnet Evidence**: Multi-agreement on-chain lifecycle verified on Stellar Testnet on 2026-10-09 (`evidence/testnet-2026-10-09-block3b.md`) including surplus refund, funded expiry refund, dispute resolution, pooled escrow isolation, and live browser Freighter wallet lifecycle (Agreement #8); historical Block 1 baseline from 2026-09-27 (`evidence/testnet-2026-09-27.md`).
 
 ### Existing Known Limitations
 - **Dispute Resolution UI**: The contract operation `resolve_dispute` requires admin authentication (`admin.require_auth()`). The application currently lacks an admin authentication system, so no UI exists for dispute resolution to prevent unauthorized access.
 - **Agreement Intents Listing**: Sponsor intents (`/sponsor/agreements/new`) create off-chain records, but there is no provider discovery endpoint for pending intents. Providers currently receive agreement parameters out-of-band.
-- **Browser Wallet Testnet Verification**: Live Testnet transactions in Block 1 were signed using Stellar CLI local key identities. End-to-end execution through a live browser Freighter extension has not yet been independently verified.
+- **API Authentication and Rate Limiting**: The Go API performs convenience wallet address checks before preparing transactions, but contract `require_auth()` remains the sole cryptographic boundary. The API does not enforce per-caller rate limits or bearer tokens.
 - **Automated Accessibility Testing**: Scans are automated via axe-core in Playwright. Dedicated manual keyboard and screen-reader audits have not yet been performed.
+- **Independent Security Audit**: No external third-party security audit has been performed on the contracts or application.
 
 ---
 

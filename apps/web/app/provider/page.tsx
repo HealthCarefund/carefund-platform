@@ -71,7 +71,7 @@ export default function ProviderDashboardPage() {
         <div className="mt-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] p-6">
           <p className="text-sm text-ink-600 dark:text-ink-300">
             This wallet is not registered as a provider on-chain. Registration is performed
-            through the provider-registry contract by an authorized registrar — this app cannot
+            through the provider-registry contract by an authorized registrar; this app cannot
             grant that status itself.
           </p>
         </div>

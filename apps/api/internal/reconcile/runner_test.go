@@ -553,3 +553,93 @@ func TestReconcileEvents_FailedEventDoesNotAdvanceCursor(t *testing.T) {
 		t.Errorf("cursor advanced to %q despite failed event ingestion, want %q", currentCursor, initialCursor)
 	}
 }
+
+func TestReconcileEvents_ReplayRecovery(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	providerRegistryID := "CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS"
+	careAgreementID := "CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O"
+	settlementAssetID := "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+
+	const rawXDR = "AAAAEQAAAAEAAAASAAAADwAAABZhdHRlc3RhdGlvbl9jb21taXRtZW50AAAAAAABAAAADwAAAAthdHRlc3RlZF9hdAAAAAABAAAADwAAAAthdHRlc3RlZF9ieQAAAAABAAAADwAAAAhhdHRlc3RlcgAAABIAAAAAAAAAAH3/zCGtzLQUGKrxls38wdh5L06xwQJSVYDbwek4BYYnAAAADwAAAA1jYXJlX2RlYWRsaW5lAAAAAAAABQAAAABqyPdcAAAADwAAAApjcmVhdGVkX2F0AAAAAAAFAAAAAGrI8+kAAAAPAAAAEWRpc3B1dGVfb3BlbmVkX2F0AAAAAAAAAQAAAA8AAAARZGlzcHV0ZV9vcGVuZWRfYnkAAAAAAAABAAAADwAAAA5kaXNwdXRlX29yaWdpbgAAAAAAEAAAAAEAAAABAAAADwAAAAROb25lAAAADwAAABNkaXNwdXRlX3dpbmRvd19zZWNzAAAAAAUAAAAAAAAASAAAAA8AAAAOZnVuZGluZ19hbW91bnQAAAAAAAoAAAAAAAAAAAAAAAAAmJaAAAAADwAAABBmdW5kaW5nX2RlYWRsaW5lAAAABQAAAABqyPbkAAAADwAAABZwYXRpZW50X3JlZl9jb21taXRtZW50AAAAAAANAAAAIBERERERERERERERERERERERERERERERERERERERERERAAAADwAAAAhwcm92aWRlcgAAABIAAAAAAAAAAGz0qyL2+h41Qg2CM5P5+WYAJbEhf3sL3HL3fbE4gaikAAAADwAAABJzZXJ2aWNlX2NvbW1pdG1lbnQAAAAAAA0AAAAgIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIAAAAPAAAAEXNldHRsZW1lbnRfYW1vdW50AAAAAAAACgAAAAAAAAAAAAAAAAB6EgAAAAAPAAAAB3Nwb25zb3IAAAAAEgAAAAAAAAAA4y3eI3Ih7LlKDamd5ddJPXSjFpPyKK8yAdUQr8ljn7kAAAAPAAAABXN0YXRlAAAAAAAAEAAAAAEAAAABAAAADwAAAAlSZXF1ZXN0ZWQAAAA="
+
+	// Start at ledger cursor 500
+	if err := s.SetReconciliationCursor(ctx, eventCursorKey, "500"); err != nil {
+		t.Fatalf("SetReconciliationCursor: %v", err)
+	}
+
+	event := protocol.EventInfo{
+		EventType:       "contract",
+		Ledger:          500,
+		ContractID:      careAgreementID,
+		ID:              "0000002000-0000000000",
+		TransactionHash: strings.Repeat("7", 64),
+		TopicXDR:        []string{symbolTopicXDR(t, "agr_cre")},
+		ValueXDR:        u64ValueXDR(t, 7),
+	}
+
+	// Pass 1: Transient RPC simulation failure simulates network or indexer delay.
+	simFail := true
+	retValStr := rawXDR
+	rpc := &fakeRPC{
+		getEvents: func(req protocol.GetEventsRequest) (protocol.GetEventsResponse, error) {
+			return protocol.GetEventsResponse{Events: []protocol.EventInfo{event}, LatestLedger: 501}, nil
+		},
+		simulate: func(envelopeXDR string) (protocol.SimulateTransactionResponse, error) {
+			if simFail {
+				return protocol.SimulateTransactionResponse{Error: "transient network timeout"}, nil
+			}
+			return protocol.SimulateTransactionResponse{
+				Results: []protocol.SimulateHostFunctionResult{
+					{ReturnValueXDR: &retValStr},
+				},
+			}, nil
+		},
+	}
+
+	runner := New(s, rpc, testLogger(), time.Hour, providerRegistryID, careAgreementID, settlementAssetID)
+	runner.reconcileEvents(ctx)
+
+	// Ensure entity was not mirrored and cursor did NOT advance
+	if _, err := s.GetAgreement(ctx, 7); err == nil {
+		t.Fatal("expected error getting agreement 7 after failed pass, got nil")
+	}
+	cursorAfterFail, err := s.GetReconciliationCursor(ctx, eventCursorKey)
+	if err != nil {
+		t.Fatalf("GetReconciliationCursor: %v", err)
+	}
+	if cursorAfterFail != "500" {
+		t.Fatalf("cursor = %q, want 500 (must not advance on error)", cursorAfterFail)
+	}
+
+	// Pass 2: Replay and recovery without manual database intervention.
+	simFail = false
+	runner.reconcileEvents(ctx)
+
+	// Agreement 7 must now be automatically mirrored in the database
+	recovered, err := s.GetAgreement(ctx, 7)
+	if err != nil {
+		t.Fatalf("GetAgreement(7) after replay: %v (failed to recover entity)", err)
+	}
+	if recovered.State != "Requested" {
+		t.Errorf("recovered State = %q, want Requested", recovered.State)
+	}
+
+	// Event must now be stored
+	page, err := s.ListEventsForAgreement(ctx, 7, 0, 10)
+	if err != nil {
+		t.Fatalf("ListEventsForAgreement: %v", err)
+	}
+	if len(page.Events) != 1 || page.Events[0].EventType != "agr_cre" {
+		t.Fatalf("page = %+v, want 1 agr_cre event", page)
+	}
+
+	// Cursor must now be advanced past the replayed ledger
+	cursorAfterReplay, err := s.GetReconciliationCursor(ctx, eventCursorKey)
+	if err != nil {
+		t.Fatalf("GetReconciliationCursor: %v", err)
+	}
+	if cursorAfterReplay != "502" {
+		t.Errorf("cursor after replay = %q, want 502", cursorAfterReplay)
+	}
+}

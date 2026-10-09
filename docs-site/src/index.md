@@ -6,13 +6,13 @@ This documentation book provides comprehensive guidance on CareFund's smart cont
 
 ## Core Objective
 
-In many healthcare scenarios, philanthropic sponsors or grant programs wish to fund critical medical care for beneficiaries directly, while ensuring funds are disbursed only when verified care is delivered by accredited providers. Traditional processes often suffer from opaque fund flows, administrative overhead, and delayed provider reimbursement.
+In many healthcare scenarios, philanthropic sponsors or grant programs wish to fund critical medical care for beneficiaries directly, while ensuring funds are disbursed only when verified care is delivered by authorized providers. Traditional processes often suffer from opaque fund flows, administrative overhead, and delayed provider reimbursement.
 
-CareFund provides a transparent, non-custodial coordination layer:
-- **Conditional Funding**: Sponsors commit funds directly into smart contracts escrowed on Stellar.
+CareFund provides a transparent coordination layer:
+- **Conditional Funding**: Sponsors deposit funds directly into smart contract escrow on Stellar.
 - **Independent Attestation**: Designated third-party attesters verify that agreed care was delivered before funds can be released.
 - **Autonomous Settlement**: Providers claim agreed funds on-chain once attestation is registered and required time gates pass.
-- **Privacy by Design**: Sensitive patient references and clinical service descriptions are never stored on-chain or in backend databases; only 32-byte opaque cryptographic commitments are recorded.
+- **Privacy Compartmentalization**: Raw patient references and clinical service descriptions are never stored on-chain or in backend databases; only precomputed 32-byte cryptographic commitments are recorded. Callers manage privacy and entropy off-chain.
 
 ## What CareFund Is Not
 
@@ -20,7 +20,7 @@ To maintain strict operational and legal integrity, CareFund explicitly defines 
 - **Not Health Insurance**: CareFund is not an insurance policy, underwriter, or clinical risk pool.
 - **Not an Electronic Health Record (EHR)**: CareFund does not store clinical histories, diagnostic imaging, or patient identifying data.
 - **Not a Medical Provider**: CareFund does not practice medicine, offer consultations, or provide triage.
-- **Not a Custodial Wallet**: Neither the web application nor backend API ever holds, manages, or transmits private keys.
+- **Not a Custodial Wallet**: Neither the web application nor backend API ever holds, manages, or transmits private keys. Agreement funds are held temporarily in escrow by the Soroban smart contract under protocol rules.
 
 ## Repository Overview
 
@@ -28,7 +28,7 @@ CareFund is organized as a unified monorepo:
 
 | Directory | Component | Description |
 |---|---|---|
-| `contracts/provider-registry` | Soroban Contract | On-chain registry of accredited providers and authorized attesters |
+| `contracts/provider-registry` | Soroban Contract | On-chain registry of registered providers and authorized attesters |
 | `contracts/care-agreement` | Soroban Contract | Agreement state machine, escrow custody, time gates, and settlement |
 | `packages/types` | TypeScript Package | Shared branded types and domain primitives |
 | `packages/sdk` | TypeScript Package | Transaction assembly, simulation, wallet signing, and RPC monitoring |

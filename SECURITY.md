@@ -73,44 +73,51 @@ supplies about themselves.
 
 ## Data privacy
 
-Patient and service identifiers are never stored as raw data anywhere in
-this system, on chain or in `apps/api`'s Postgres mirror. They are
-recorded only as 32 byte opaque commitments (hashes), computed by the
-caller before they ever reach this system. Postgres stores off-chain
-workflow metadata only (agreement mirrors for querying, agreement
-intents, idempotency records, audit records, transaction references);
-when it disagrees with chain state, chain state wins and background
-reconciliation corrects the mirror. Request logging records method,
-path, status, and duration only, deliberately never request or response
-bodies, headers, or query strings.
+Raw patient and clinical data must never be submitted to CareFund.
+Contracts and databases store only precomputed 32-byte commitment hashes
+provided by callers before submission. The web application accepts
+precomputed 64-character hexadecimal hashes and does not transform raw
+records into commitments.
+
+CareFund does not claim that deterministic SHA-256 hashing alone provides
+legal anonymization. Low-entropy or predictable inputs remain vulnerable
+to dictionary attacks or correlation if hashed naively without external
+mitigations. The project makes no claim of HIPAA or GDPR compliance.
+Postgres stores off-chain workflow metadata only (agreement mirrors for
+querying, agreement intents, idempotency records, audit records, transaction
+references); when it disagrees with chain state, chain state wins and
+background reconciliation corrects the mirror. Request logging records
+method, path, status, and duration only, deliberately omitting request
+bodies, response bodies, headers, and query strings.
 
 ## Dependency scanning
 
-- `pnpm audit` (both with and without `--prod`): no known vulnerabilities
-  found, as of 2026-09-27.
-- `cargo audit`: no vulnerabilities found, as of 2026-09-27. One
-  unmaintained-crate warning (`paste`, RUSTSEC-2024-0436), pulled in
-  transitively through `soroban-sdk`'s cryptography dependencies, not a
-  crate this project chooses directly and not a reported vulnerability.
-- `govulncheck` (Go): found and fixed GO-2026-5970 (an infinite loop on
-  invalid input in `golang.org/x/text`, reachable through
-  `pgxpool.New`), remediated by upgrading to v0.39.0. A rerun afterward
-  reports 0 vulnerabilities in code this project actually calls.
+Fresh scans performed during Block 3C on 2026-10-09:
 
-None of the above constitutes a full software composition analysis
-program; they are point in time scans run manually as part of this
-project's Block 1 security review.
+- `cargo audit`: scanned 216 crate dependencies with 0 vulnerabilities
+  found. 1 allowed unmaintained-crate advisory exists for `paste` 1.0.15
+  (RUSTSEC-2024-0436), pulled in transitively by `soroban-sdk` macros.
+- `govulncheck` (Go): 0 critical vulnerabilities. 10 non-critical
+  vulnerabilities reported across the Go 1.27.1 standard library
+  (fixed in Go 1.27.2) and `golang.org/x/text` (GO-2026-6629).
+- `pnpm audit` and `pnpm audit --prod`: 0 critical vulnerabilities. 9
+  vulnerabilities (1 low, 4 moderate, 4 high; 8 in production dependencies)
+  reported for `next` versions prior to 16.3.8. The web application is
+  hosted locally during verification and is not exposed to public hosting.
+
+These point-in-time scans reflect current upstream vulnerability advisories
+at audit time. Dependabot is active for automated dependency updates.
 
 ## Audit status
 
 **No independent, professional security audit of these contracts or
 this application has been performed.** The verification performed in
-this repository is automated testing (unit, integration, and one real
-Stellar Testnet deployment and lifecycle execution, see
-`evidence/testnet-2026-09-27.md`) plus a manual, non-exhaustive security
-review by whoever is working on this repository at the time. Do not
-treat this project as production ready or audited on the strength of
-this document.
+this repository consists of extensive automated testing (unit, integration,
+and failure injection suites) and live Stellar Testnet lifecycle execution
+recorded in `evidence/testnet-2026-10-09-block3b.md` (with historical Block 1
+baseline in `evidence/testnet-2026-09-27.md`), alongside manual security
+reviews by repository maintainers. Do not treat this project as production
+ready or audited on the strength of this document.
 
 ## Known limitations
 
