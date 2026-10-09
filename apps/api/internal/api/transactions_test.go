@@ -16,22 +16,21 @@ import (
 )
 
 // These constants are the real contracts and accounts deployed/registered
-// to Testnet for Block 1 verification (Phase 10). Not secrets: contract
+// to Testnet for Block 3B verification. Not secrets: contract
 // IDs and public keys are, by design, public on-chain identifiers.
-// provider-registry: CCGF5Y7CYRJSCMXE7NRCAXY4CKYWY22BXWOYILFXZD32EXFHOOTLNMSG
-// care-agreement deploy tx: ce155a193b5efdbfd32ca9fc1e5aba93a43bb1a278f3ff4d68565ab964db80f2
+// provider-registry: CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS
+// care-agreement deploy tx: dbcfa8a6ad27b78a3a0631b6041b744ba68f90320371d1a628f50949c630d7da
 // Agreement id 1 on this contract completed a full real lifecycle
-// (created, funded, attested, settled). Agreement id 2 (referenced
-// below) was created separately and left in Requested state, unfunded,
-// specifically for this test.
+// (created, funded, attested, settled). Agreement id 6 was created separately
+// and left in Requested state, unfunded, specifically for this test.
 const (
-	liveCareAgreementContractID = "CD6NC44TOSO2G4RCVHULJUUHI4A52MCAYVAPNKQOLQSATWEK3DRDU2BS"
-	liveProviderAddress         = "GARYN44ZRCQYNXHR6VEB6ZLJWAMSF7SAO6CDCM6NQHOXMCSKJ54UCJBP"
-	liveAttesterAddress         = "GBD5ORGLBELP4MSHDHKOXSRP7BEKTO63T4JO3O2DAXBZSTJVTGMFZFGG"
-	liveSponsorAddress          = "GDEI32FXSM6XIOKHUXT43MOB7GTKRRZVBNVVCW6XE6DXXKL7J3LKCI3S"
+	liveCareAgreementContractID = "CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O"
+	liveProviderAddress         = "GBWPJKZC635B4NKCBWBDHE7Z7FTAAJNREF7XWC64OL3X3MJYQGUKI453"
+	liveAttesterAddress         = "GB677TBBVXGLIFAYVLYZNTP4YHMHSL2OWHAQEUSVQDN4D2JYAWDCPFRT"
+	liveSponsorAddress          = "GDRS3XRDOIQ6ZOKKBWUZ3ZOXJE6XJIYWSPZCRLZSAHKRBL6JMOP3SYPH"
 	liveNetworkPassphrase       = "Test SDF Network ; September 2015"
 	liveRPCURL                  = "https://soroban-testnet.stellar.org"
-	liveSeededAgreementID       = int64(2)
+	liveSeededAgreementID       = int64(6)
 )
 
 func liveTestnetAgreement() store.CareAgreement {
@@ -97,7 +96,7 @@ func TestPrepareTransaction_UnknownOperationRejected(t *testing.T) {
 }
 
 func TestPrepareTransaction_WalletMismatchRejectedWithoutCallingRPC(t *testing.T) {
-	// No RPC is configured in these deps at all — if the handler tried to
+	// No RPC is configured in these deps at all - if the handler tried to
 	// call it before validating the wallet, this would panic on a nil
 	// pointer instead of returning 400.
 	deps, mux := newTestDeps(t)
@@ -180,7 +179,7 @@ func TestBuildOperationArgs_SettleIsPermissionless(t *testing.T) {
 // TestPrepareTransaction_FundLiveTestnet exercises the full
 // build->simulate->assemble pipeline against the real care-agreement
 // contract deployed to Testnet and a genuine on-chain agreement (id 1,
-// created for this phase's verification, still in Requested state) — a
+// created for this phase's verification, still in Requested state) - a
 // real RPC round trip, not a mock. It only prepares the transaction; it is
 // never signed or submitted here, so it makes no on-chain change.
 func TestPrepareTransaction_FundLiveTestnet(t *testing.T) {
@@ -196,7 +195,7 @@ func TestPrepareTransaction_FundLiveTestnet(t *testing.T) {
 		t.Fatalf("UpsertAgreement: %v", err)
 	}
 
-	rec := postJSON(t, mux, "/api/v1/agreements/2/transactions", prepareTransactionRequest{
+	rec := postJSON(t, mux, "/api/v1/agreements/6/transactions", prepareTransactionRequest{
 		Operation:       operationFund,
 		SourcePublicKey: liveSponsorAddress,
 	})
