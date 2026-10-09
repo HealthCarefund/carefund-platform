@@ -1044,9 +1044,9 @@ fn test_expire_agreement_from_funded_success() {
         AgreementState::Funded
     );
 
-    // Advance time past care deadline
+    // Advance time past care deadline and dispute window
     env.ledger().with_mut(|l| {
-        l.timestamp = care_deadline + 1;
+        l.timestamp = care_deadline + 3600 + 1;
     });
 
     // Expire the agreement
@@ -1055,6 +1055,16 @@ fn test_expire_agreement_from_funded_success() {
     // Verify agreement is now in Expired state
     let agreement = client.get_agreement(&agreement_id);
     assert_eq!(agreement.state, AgreementState::Expired);
+
+    let get_balance = |addr: &Address| -> i128 {
+        env.invoke_contract(
+            &token_contract_id,
+            &soroban_sdk::Symbol::new(&env, "balance"),
+            soroban_sdk::Vec::from_array(&env, [addr.clone().into_val(&env)]),
+        )
+    };
+    assert_eq!(get_balance(&sponsor), 1000_0000000i128);
+    assert_eq!(get_balance(&client.address), 0i128);
 }
 
 #[test]
@@ -1123,6 +1133,13 @@ fn test_expire_agreement_before_deadline_rejected() {
     // Try to expire before care deadline
     let res = client.try_expire(&agreement_id);
     assert_eq!(res, Err(Ok(AgreementError::CareDeadlineNotPassed)));
+
+    // Try to expire during dispute window
+    env.ledger().with_mut(|l| {
+        l.timestamp = care_deadline + 100;
+    });
+    let res_window = client.try_expire(&agreement_id);
+    assert_eq!(res_window, Err(Ok(AgreementError::DisputeWindowActive)));
 }
 
 #[test]
@@ -1149,8 +1166,20 @@ fn test_expire_agreement_invalid_state_rejected() {
     let (client, admin) = create_client(&env);
     client.initialize(&admin, &registry_client.address, &token_contract_id);
 
-    // Create agreement but don't fund it
     let sponsor = Address::generate(&env);
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (1000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
+
     let patient_ref = BytesN::from_array(&env, &[3u8; 32]);
     let service_commitment = BytesN::from_array(&env, &[4u8; 32]);
 
@@ -1171,12 +1200,21 @@ fn test_expire_agreement_invalid_state_rejected() {
         &3600u64,
     );
 
-    // Advance time past care deadline
+    // 1. Requested state before funding deadline rejected
+    let res_before_fd = client.try_expire(&agreement_id);
+    assert_eq!(res_before_fd, Err(Ok(AgreementError::FundingDeadlineNotReached)));
+
+    // 2. Fund agreement and attest care -> CareConfirmed
+    client.fund(&agreement_id, &sponsor);
+    let attestation_ref = BytesN::from_array(&env, &[5u8; 32]);
+    client.attest_care(&agreement_id, &attester, &attestation_ref);
+
+    // Advance time past care deadline and dispute window
     env.ledger().with_mut(|l| {
-        l.timestamp = care_deadline + 1;
+        l.timestamp = care_deadline + 3600 + 1;
     });
 
-    // Try to expire agreement in Requested state (should fail)
+    // 3. Try to expire agreement in CareConfirmed state (rejected with InvalidState)
     let res = client.try_expire(&agreement_id);
     assert_eq!(res, Err(Ok(AgreementError::InvalidState)));
 }
@@ -2012,21 +2050,32 @@ fn test_settle_agreement_success() {
         AgreementState::CareConfirmed
     );
 
-    // Advance time past care deadline
+    // Advance time past care deadline and dispute window
     env.ledger().with_mut(|l| {
-        l.timestamp = care_deadline + 1;
+        l.timestamp = care_deadline + 3600 + 1;
     });
 
     // Settle the agreement
-    client.settle(&agreement_id, &sponsor);
+    client.settle(&agreement_id);
 
     // Verify agreement is now in Settled state
     let agreement = client.get_agreement(&agreement_id);
     assert_eq!(agreement.state, AgreementState::Settled);
+
+    let get_balance = |addr: &Address| -> i128 {
+        env.invoke_contract(
+            &token_contract_id,
+            &soroban_sdk::Symbol::new(&env, "balance"),
+            soroban_sdk::Vec::from_array(&env, [addr.clone().into_val(&env)]),
+        )
+    };
+    assert_eq!(get_balance(&provider), 900_0000000i128);
+    assert_eq!(get_balance(&sponsor), 100_0000000i128);
+    assert_eq!(get_balance(&client.address), 0i128);
 }
 
 #[test]
-fn test_settle_agreement_wrong_sponsor_rejected() {
+fn test_settle_agreement_permissionless_caller() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -2092,15 +2141,18 @@ fn test_settle_agreement_wrong_sponsor_rejected() {
     let attestation_commitment = BytesN::from_array(&env, &[5u8; 32]);
     client.attest_care(&agreement_id, &attester, &attestation_commitment);
 
-    // Advance time past care deadline
+    // Advance time past care deadline and dispute window
     env.ledger().with_mut(|l| {
-        l.timestamp = care_deadline + 1;
+        l.timestamp = care_deadline + 3600 + 1;
     });
 
-    // Try to settle with wrong sponsor
-    let wrong_sponsor = Address::generate(&env);
-    let res = client.try_settle(&agreement_id, &wrong_sponsor);
-    assert_eq!(res, Err(Ok(AgreementError::Unauthorized)));
+    // Permissionless settle callable by anyone
+    let res = client.try_settle(&agreement_id);
+    assert!(res.is_ok());
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Settled
+    );
 }
 
 #[test]
@@ -2166,13 +2218,13 @@ fn test_settle_agreement_wrong_state_rejected() {
     // Fund the agreement but don't attest (stays in Funded state)
     client.fund(&agreement_id, &sponsor);
 
-    // Advance time past care deadline
+    // Advance time past care deadline and dispute window
     env.ledger().with_mut(|l| {
-        l.timestamp = care_deadline + 1;
+        l.timestamp = care_deadline + 3600 + 1;
     });
 
     // Try to settle without attestation (should fail - state is Funded, not CareConfirmed)
-    let res = client.try_settle(&agreement_id, &sponsor);
+    let res = client.try_settle(&agreement_id);
     assert_eq!(res, Err(Ok(AgreementError::InvalidState)));
 }
 
@@ -2244,21 +2296,87 @@ fn test_settle_agreement_before_deadline_rejected() {
     client.attest_care(&agreement_id, &attester, &attestation_commitment);
 
     // Try to settle before care deadline (should fail)
-    let res = client.try_settle(&agreement_id, &sponsor);
+    let res = client.try_settle(&agreement_id);
     assert_eq!(res, Err(Ok(AgreementError::CareDeadlineNotPassed)));
+
+    // Advance into dispute window (after care deadline, before dispute window end)
+    env.ledger().with_mut(|l| {
+        l.timestamp = care_deadline + 100;
+    });
+
+    let res_window = client.try_settle(&agreement_id);
+    assert_eq!(res_window, Err(Ok(AgreementError::DisputeWindowActive)));
 }
 
 #[test]
-#[should_panic(expected = "HostError")]
-fn test_settle_agreement_unauthorized_fails() {
-    let unauth_env = Env::default();
-    let unauth_contract_id = unauth_env.register(CareAgreementContract, ());
-    let unauth_care_client = CareAgreementContractClient::new(&unauth_env, &unauth_contract_id);
+fn test_settle_agreement_permissionless_does_not_require_sponsor_auth() {
+    let env = Env::default();
+    env.mock_all_auths();
 
-    let unauth_sponsor = Address::generate(&unauth_env);
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
 
-    // Call settle directly without sponsor auth
-    unauth_care_client.settle(&1u64, &unauth_sponsor);
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+    let sponsor = Address::generate(&env);
+
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (1000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    let patient_ref = BytesN::from_array(&env, &[3u8; 32]);
+    let service_commitment = BytesN::from_array(&env, &[4u8; 32]);
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 86400;
+    let care_deadline = funding_deadline + 86400;
+
+    let agreement_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &patient_ref,
+        &service_commitment,
+        &1000_0000000i128,
+        &900_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &3600u64,
+    );
+
+    client.fund(&agreement_id, &sponsor);
+    let attestation_commitment = BytesN::from_array(&env, &[5u8; 32]);
+    client.attest_care(&agreement_id, &attester, &attestation_commitment);
+
+    env.ledger().with_mut(|l| {
+        l.timestamp = care_deadline + 3600 + 1;
+    });
+
+    let res = client.try_settle(&agreement_id);
+    assert!(res.is_ok());
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Settled
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -2650,13 +2768,13 @@ fn test_complete_lifecycle_requested_to_settled() {
         AgreementState::CareConfirmed
     );
 
-    // Advance past care deadline
+    // Advance past care deadline and dispute window
     env.ledger().with_mut(|l| {
-        l.timestamp = care_deadline + 1;
+        l.timestamp = care_deadline + 3600 + 1;
     });
 
     // Settle -> Settled
-    client.settle(&agreement_id, &sponsor);
+    client.settle(&agreement_id);
     assert_eq!(
         client.get_agreement(&agreement_id).state,
         AgreementState::Settled
@@ -2857,9 +2975,9 @@ fn test_expiry_transitions() {
 
     client.fund(&agreement_id, &sponsor);
 
-    // Advance past care deadline
+    // Advance past care deadline and dispute window
     env.ledger().with_mut(|l| {
-        l.timestamp = care_deadline + 1;
+        l.timestamp = care_deadline + 3600 + 1;
     });
 
     // Expire from Funded -> Expired
@@ -3388,24 +3506,31 @@ fn test_cross_contract_multi_agreement_token_balance_lifecycle() {
     let attestation_ref = BytesN::from_array(&env, &[7u8; 32]);
     client.attest_care(&ag1, &attester, &attestation_ref);
 
-    // Advance time past care deadline
+    // Advance time past care deadline (into dispute window)
     env.ledger().with_mut(|l| {
         l.timestamp = care_deadline + 1;
     });
 
-    // Settle Ag1 -> provider receives 1800
-    client.settle(&ag1, &sponsor_1);
-    assert_eq!(get_balance(&provider), 1800_0000000i128);
-    assert_eq!(get_balance(&client.address), 3200_0000000i128);
-
-    // Ag2 disputed from Funded state and settled via dispute resolution
+    // Ag2 disputed from Funded state within dispute window
     client.open_dispute(&ag2, &sponsor_2);
     assert_eq!(client.get_agreement(&ag2).state, AgreementState::Disputed);
 
-    // Resolve Ag2 dispute with Settle -> provider receives another 2700
+    // Advance time past dispute window
+    env.ledger().with_mut(|l| {
+        l.timestamp = care_deadline + 3600 + 1;
+    });
+
+    // Settle Ag1 -> provider receives 1800, sponsor 1 receives surplus refund of 200
+    client.settle(&ag1);
+    assert_eq!(get_balance(&provider), 1800_0000000i128);
+    assert_eq!(get_balance(&sponsor_1), 3200_0000000i128);
+    assert_eq!(get_balance(&client.address), 3000_0000000i128);
+
+    // Resolve Ag2 dispute with Settle -> provider receives another 2700, sponsor 2 receives surplus refund of 300
     client.resolve_dispute(&ag2, &crate::DisputeResolution::Settle);
     assert_eq!(get_balance(&provider), 4500_0000000i128);
-    assert_eq!(get_balance(&client.address), 500_0000000i128);
+    assert_eq!(get_balance(&sponsor_2), 2300_0000000i128);
+    assert_eq!(get_balance(&client.address), 0i128);
 }
 
 #[test]
@@ -3607,13 +3732,13 @@ fn test_cross_contract_multiple_providers_and_attesters_isolation() {
         AgreementState::CareConfirmed
     );
 
-    // Advance past care deadline
+    // Advance past care deadline and dispute window
     env.ledger().with_mut(|l| {
-        l.timestamp = care_deadline + 1;
+        l.timestamp = care_deadline + 3600 + 1;
     });
 
     // Settle ag2 to Provider 2
-    client.settle(&ag2, &sponsor_2);
+    client.settle(&ag2);
     assert_eq!(client.get_agreement(&ag2).state, AgreementState::Settled);
 
     let get_balance = |addr: &Address| -> i128 {
@@ -3880,23 +4005,23 @@ fn test_security_double_settlement_rejected() {
     client.attest_care(&agreement_id, &attester, &attestation_ref);
 
     env.ledger().with_mut(|l| {
-        l.timestamp = care_deadline + 1;
+        l.timestamp = care_deadline + 3600 + 1;
     });
 
     // First settle succeeds
-    assert!(client.try_settle(&agreement_id, &sponsor).is_ok());
+    assert!(client.try_settle(&agreement_id).is_ok());
     assert_eq!(
         client.get_agreement(&agreement_id).state,
         AgreementState::Settled
     );
 
     // Second settle attempt rejected with InvalidState
-    let res = client.try_settle(&agreement_id, &sponsor);
+    let res = client.try_settle(&agreement_id);
     assert_eq!(res, Err(Ok(AgreementError::InvalidState)));
 }
 
 #[test]
-fn test_security_unauthorized_settler_rejected() {
+fn test_security_settlement_is_permissionless_after_dispute_window() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -3914,7 +4039,7 @@ fn test_security_unauthorized_settler_rejected() {
     let token_admin = Address::generate(&env);
     let token_contract_id = env.register_stellar_asset_contract(token_admin);
     let sponsor = Address::generate(&env);
-    let attacker = Address::generate(&env);
+    let third_party = Address::generate(&env);
 
     use soroban_sdk::IntoVal;
     env.invoke_contract::<()>(
@@ -3957,11 +4082,28 @@ fn test_security_unauthorized_settler_rejected() {
     client.attest_care(&agreement_id, &attester, &attestation_ref);
 
     env.ledger().with_mut(|l| {
-        l.timestamp = care_deadline + 1;
+        l.timestamp = care_deadline + 3600 + 1;
     });
 
-    let res = client.try_settle(&agreement_id, &attacker);
-    assert_eq!(res, Err(Ok(AgreementError::Unauthorized)));
+    // Third party can trigger settlement; funds route to provider and sponsor, not third party
+    let res = client.try_settle(&agreement_id);
+    assert!(res.is_ok());
+    assert_eq!(
+        client.get_agreement(&agreement_id).state,
+        AgreementState::Settled
+    );
+
+    let get_balance = |addr: &Address| -> i128 {
+        env.invoke_contract(
+            &token_contract_id,
+            &soroban_sdk::Symbol::new(&env, "balance"),
+            soroban_sdk::Vec::from_array(&env, [addr.clone().into_val(&env)]),
+        )
+    };
+    assert_eq!(get_balance(&provider), 900_0000000i128);
+    assert_eq!(get_balance(&sponsor), 100_0000000i128);
+    assert_eq!(get_balance(&third_party), 0i128);
+    assert_eq!(get_balance(&client.address), 0i128);
 }
 
 #[test]
@@ -4029,7 +4171,7 @@ fn test_security_settlement_before_care_deadline_rejected() {
         l.timestamp = care_deadline;
     });
 
-    let res = client.try_settle(&agreement_id, &sponsor);
+    let res = client.try_settle(&agreement_id);
     assert_eq!(res, Err(Ok(AgreementError::CareDeadlineNotPassed)));
 }
 
@@ -4669,6 +4811,13 @@ fn test_security_expiry_before_care_deadline_rejected() {
 
     let res = client.try_expire(&agreement_id);
     assert_eq!(res, Err(Ok(AgreementError::CareDeadlineNotPassed)));
+
+    // Current time is within dispute window
+    env.ledger().with_mut(|l| {
+        l.timestamp = care_deadline + 100;
+    });
+    let res_window = client.try_expire(&agreement_id);
+    assert_eq!(res_window, Err(Ok(AgreementError::DisputeWindowActive)));
 }
 
 #[test]
@@ -4690,6 +4839,19 @@ fn test_security_expiry_wrong_state_rejected() {
     let token_admin = Address::generate(&env);
     let token_contract_id = env.register_stellar_asset_contract(token_admin);
     let sponsor = Address::generate(&env);
+
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (1000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
 
     let (client, admin) = create_client(&env);
     client.initialize(&admin, &registry_client.address, &token_contract_id);
@@ -4713,11 +4875,17 @@ fn test_security_expiry_wrong_state_rejected() {
         &3600u64,
     );
 
-    // Advance past care deadline on unfunded Requested agreement
+    // Fund agreement and attest care -> CareConfirmed
+    client.fund(&agreement_id, &sponsor);
+    let attestation_ref = BytesN::from_array(&env, &[5u8; 32]);
+    client.attest_care(&agreement_id, &attester, &attestation_ref);
+
+    // Advance past care deadline and dispute window
     env.ledger().with_mut(|l| {
-        l.timestamp = care_deadline + 1;
+        l.timestamp = care_deadline + 3600 + 1;
     });
 
+    // CareConfirmed agreements cannot be expired
     let res = client.try_expire(&agreement_id);
     assert_eq!(res, Err(Ok(AgreementError::InvalidState)));
 }
@@ -4943,7 +5111,7 @@ fn test_security_nonexistent_agreement_operations_rejected() {
         Err(Ok(AgreementError::AgreementNotFound))
     );
     assert_eq!(
-        client.try_settle(&nonexistent_id, &dummy_addr),
+        client.try_settle(&nonexistent_id),
         Err(Ok(AgreementError::AgreementNotFound))
     );
     assert_eq!(
@@ -5180,7 +5348,7 @@ fn test_red_b3_surplus_retained_in_contract_after_settlement() {
         l.timestamp = care_deadline + dispute_window_secs + 1;
     });
 
-    client.settle(&ag_id, &sponsor);
+    client.settle(&ag_id);
     assert_eq!(get_balance(&provider), 800_0000000i128);
 
     // Defect B3: Under old code, surplus (200) is stranded in contract. Sponsor gets 0.
@@ -5256,7 +5424,7 @@ fn test_red_b4_settlement_races_and_abbreviates_dispute_window() {
     // Correct behavior: settlement must be rejected while dispute window is active.
     // This assertion fails under old code (it returns Ok(Ok(()))):
     assert_eq!(
-        client.try_settle(&ag_id, &sponsor),
+        client.try_settle(&ag_id),
         Err(Ok(AgreementError::DisputeWindowActive))
     );
 }
