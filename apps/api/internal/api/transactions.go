@@ -146,15 +146,11 @@ func buildOperationArgs(agreementID int64, agreement *store.CareAgreement, req p
 		return []xdr.ScVal{idArg, providerArg}, nil
 
 	case operationSettle:
-		requireWallet(&issues, "sourcePublicKey", req.SourcePublicKey, agreement.SponsorWallet, "sponsor")
+		// Permissionless on-chain: any funded account may submit it once dispute window has elapsed.
 		if len(issues) > 0 {
 			return nil, issues
 		}
-		sponsorArg, err := sorobanenc.Address(req.SourcePublicKey)
-		if err != nil {
-			return nil, append(issues, httpx.FieldIssue{Field: "sourcePublicKey", Issue: err.Error()})
-		}
-		return []xdr.ScVal{idArg, sponsorArg}, nil
+		return []xdr.ScVal{idArg}, nil
 
 	case operationOpenDispute:
 		if req.SourcePublicKey != agreement.SponsorWallet && req.SourcePublicKey != agreement.ProviderWallet {
