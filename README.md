@@ -1,176 +1,158 @@
+<p align="center">
+  <img src="assets/carefund-banner.webp" alt="CareFund: Healthcare and Funding Coordination on Stellar" width="100%" />
+</p>
+<p align="center">
+  <em>Illustrative project artwork depicting healthcare and funding coordination on Stellar.</em>
+</p>
+
 # CareFund
 
-CareFund coordinates care agreements between sponsors, providers, and
-attesters, with funding held and settlement executed by Soroban smart
-contracts on Stellar. This repository is the full application layer built
-on top of the Phase 6 contracts (`contracts/provider-registry`,
-`contracts/care-agreement`): a Go API, a Next.js web app, and the
-supporting TypeScript SDK packages.
+<p align="center">
+  <a href="https://github.com/HealthCarefund/carefund-platform/actions/workflows/ci.yml"><img src="https://github.com/HealthCarefund/carefund-platform/actions/workflows/ci.yml/badge.svg" alt="CI Status" /></a>
+  <a href="https://github.com/HealthCarefund/carefund-platform/actions/workflows/docs.yml"><img src="https://github.com/HealthCarefund/carefund-platform/actions/workflows/docs.yml/badge.svg" alt="Documentation Status" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0" /></a>
+  <a href="./evidence/testnet-2026-09-27.md"><img src="https://img.shields.io/badge/stellar-testnet-teal.svg" alt="Stellar Testnet: Evidenced" /></a>
+</p>
 
-## Architecture
+<p align="center">
+  <a href="docs-site/">Documentation Source</a> |
+  <a href="https://healthcarefund.github.io/carefund-platform/">Documentation Book</a> |
+  <a href="evidence/index.md">Verification Evidence</a> |
+  <a href="SECURITY.md">Security Policy</a> |
+  <a href="CONTRIBUTING.md">Contributing</a> |
+  <a href="ROADMAP.md">Roadmap</a>
+</p>
+
+CareFund coordinates care agreements between healthcare sponsors, medical providers, and independent attesters, holding conditional funding in escrow and executing settlement autonomously through Soroban smart contracts on the Stellar network.
+
+CareFund operates strictly as a non-custodial funding coordination and verification protocol. It is not health insurance, an underwriter, an electronic health records system, a patient diagnostic service, or a custodial wallet.
+
+## Why CareFund Exists
+
+Charitable and subsidized healthcare programs frequently confront three systemic obstacles:
+
+1. **Pre-funding Risk**: Donors who advance capital upfront risk funds being misspent or unverified against actual patient care delivery.
+2. **Provider Cash-Flow Strain**: Requiring clinics to deliver care upfront and wait months for donor reimbursement strains community health operations.
+3. **Privacy Vulnerabilities**: Centralized grant tracking often exposes sensitive patient identities and diagnostic notes to donor auditing staff.
+
+CareFund eliminates these trade-offs by locking donor funds in verifiable smart contract escrow upfront, releasing reimbursement to clinics only when accredited third-party attesters verify clinical completion on-chain, and replacing all personal data with opaque 32-byte cryptographic commitments.
+
+## System Components
 
 ```
-contracts/                  Soroban contracts (Phase 6, unchanged by this work)
-  provider-registry/          On-chain provider/attester registration and status
-  care-agreement/              On-chain agreement lifecycle, funding, settlement, disputes
+contracts/
+  provider-registry/          On-chain provider status and attester authorization
+  care-agreement/             Agreement escrow, state machine, and settlement
 
 packages/
-  types/                       Branded primitive types shared by every TS package
-                                (StellarAddress, CommitmentHash, AgreementId, ...)
-  sdk/                          Build/simulate/sign/submit/confirm transaction pipeline,
-                                 Freighter wallet integration, config validation
-  sdk/generated/*                Generated TS contract bindings (from each contract's WASM)
+  types/                      Branded domain types (StellarAddress, CommitmentHash, ...)
+  sdk/                        Transaction pipeline, simulation, and Freighter adapter
+  sdk/generated/*             Typed Soroban contract bindings
 
 apps/
-  api/                          Go backend: off-chain workflow metadata, transaction
-                                 preparation, background reconciliation with the chain
-  web/                          Next.js frontend: provider/sponsor/admin workflows,
-                                 wallet-signed transactions submitted directly to RPC
+  api/                        Go REST service: PostgreSQL metadata mirror, transaction prep,
+                              idempotency control, and background chain reconciliation
+  web/                        Next.js application: Provider, sponsor, and attester portals
+                              with direct client-side wallet signing
 ```
 
-**The chain is the source of truth.** Postgres (`apps/api`) stores only
-off-chain workflow metadata — a mirror of on-chain state for fast querying,
-plus purely off-chain records like agreement intents and idempotency keys.
-It never stores patient, clinical, or other PHI: patient and service
-identifiers are recorded everywhere (on-chain and in Postgres) only as
-32-byte opaque commitments (hashes), computed by the caller before they
-ever reach this system. When the mirror and the chain disagree, a
-background reconciliation loop (`apps/api/internal/reconcile`) corrects
-the mirror from the chain — never the other way around.
+- **The blockchain is the source of truth**: PostgreSQL (`apps/api`) stores only off-chain workflow metadata (agreement intents, idempotency reservations, and a queryable mirror of ledger state). Background workers reconcile the mirror from the chain, never the reverse.
+- **The wallet is the only signer**: Neither the Go API nor the Next.js web application holds private keys. Transactions are prepared unsigned, signed client-side via the Freighter browser extension, and submitted directly to Soroban RPC.
+- **Zero clinical data exposure**: Patient and service identifiers exist solely as 32-byte SHA-256 commitments computed off-chain by clinics prior to submission.
 
-**The wallet is the only signer.** Neither `apps/api` nor `apps/web` ever
-holds, receives, or transmits a private key. The Go API only builds,
-simulates, and returns *unsigned* transaction XDR for seven of the eight
-agreement-lifecycle operations (`fund`, `cancel`, `attest_care`,
-`open_dispute`, `expire`, `settle`, `resolve_dispute`); the frontend has
-the browser wallet (Freighter, via `packages/sdk`) sign it and submits the
-signed transaction directly to Soroban RPC itself — never proxied through
-the backend. `create_agreement` is the one exception: since it doesn't yet
-have an `agreementId`, it's built and prepared client-side using the same
-SDK primitives instead of going through the backend's per-agreement
-endpoint.
+## Core Protocol Workflow
 
-## Toolchain
+1. **Provider Onboarding**: The contract administrator registers accredited clinics in `provider-registry` (`register_provider`) and authorizes bound attesters (`register_attester`).
+2. **Agreement Proposal**: A provider or sponsor initializes a care agreement (`create_agreement`) specifying token amounts, deadlines, and cryptographic commitment hashes.
+3. **Escrow Deposit**: The sponsor deposits funds (`fund`) into the `care-agreement` contract via the Stellar Asset Contract (SAC).
+4. **Care Attestation**: Upon procedure completion, the designated attester verifies clinical delivery and submits an attestation hash (`attest_care`).
+5. **Autonomous Settlement**: Once care is attested and the care deadline passes, the sponsor triggers settlement (`settle`), transferring reimbursement directly to the provider wallet.
+6. **Disputes and Safeguards**: If disagreements arise, either party can open a dispute (`open_dispute`) during the defined dispute window for administrative resolution (`resolve_dispute`).
 
-See [`TOOLCHAIN.md`](./TOOLCHAIN.md) for the exact pinned versions (Go,
-Node.js, pnpm, Rust, PostgreSQL, Stellar CLI, and the pinned TypeScript
-package versions) and `scripts/check-toolchain.sh` to verify your local
-environment matches. Nothing in this project silently falls back to a
-different version.
+## Local Quickstart
 
-## Local setup
+CareFund pins exact versions of every development tool (see [TOOLCHAIN.md](./TOOLCHAIN.md)). Verify your local environment matches:
 
-1. **Database.** CareFund uses an isolated PostgreSQL 18.6 instance — it
-   never touches a host PostgreSQL install:
-   ```
-   docker compose up -d
-   ```
-   This starts `carefund-pg18` on host port **5439** (database `carefund`,
-   user `carefund`). See `docker-compose.yml`.
+```bash
+./scripts/check-toolchain.sh
+```
 
-2. **Install dependencies:**
-   ```
-   pnpm install
-   ```
-   (Also builds the Rust/Soroban toolchain requirements separately — see
-   `scripts/generate-contract-bindings.sh` if contract WASM/bindings need
-   regenerating after a contract change.)
+### 1. Start the Isolated Database
+CareFund uses a dedicated PostgreSQL 18.6 container on host port **5439**, keeping host databases untouched:
 
-3. **Configure the API** (`apps/api`). Copy `.env.example` and set, at
-   minimum, `DATABASE_URL` (already defaults to the docker-compose
-   instance above) plus the Stellar network fields below.
+```bash
+docker compose up -d
+```
 
-4. **Configure the web app** (`apps/web/.env.local`), all `NEXT_PUBLIC_*`
-   since they're genuinely public (network name, RPC URL, contract IDs —
-   never a secret):
-   ```
-   NEXT_PUBLIC_STELLAR_NETWORK=TESTNET
-   NEXT_PUBLIC_STELLAR_RPC_URL=https://soroban-testnet.stellar.org
-   NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
-   NEXT_PUBLIC_PROVIDER_REGISTRY_CONTRACT_ID=C...
-   NEXT_PUBLIC_CARE_AGREEMENT_CONTRACT_ID=C...
-   NEXT_PUBLIC_SETTLEMENT_ASSET_CONTRACT_ID=C...
-   NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
-   ```
-   `packages/sdk`'s `validateStellarClientConfig` refuses to start with a
-   missing or malformed value here rather than silently defaulting — an
-   incomplete config must fail loudly, not point a signed transaction at
-   the wrong network.
+### 2. Install Dependencies
+```bash
+pnpm install
+```
 
-5. **Run the API:**
-   ```
-   cd apps/api && go run ./cmd/api
-   ```
+### 3. Configure and Start the Go API
+```bash
+cp apps/api/.env.example apps/api/.env
+cd apps/api && go run ./cmd/api
+```
+The API listens at `http://localhost:8080`.
 
-6. **Run the web app:**
-   ```
-   pnpm --filter @carefund/web run dev
-   ```
+### 4. Start the Web Application
+```bash
+pnpm --filter @carefund/web run dev
+```
+The frontend is available at `http://localhost:3000`. Detailed setup and environment documentation is available in the [Documentation Book](https://healthcarefund.github.io/carefund-platform/getting-started.html).
 
-### Network configuration: Testnet vs. local
+## Testing Strategy
 
-Every environment field above (`STELLAR_NETWORK`, RPC URL, passphrase,
-contract IDs) is required and cross-validated — e.g. a `TESTNET` network
-value must pair with the well-known Testnet passphrase, not an
-arbitrary one. Pointing this app at a local/standalone Soroban network
-instead of Testnet means setting `STELLAR_NETWORK=CUSTOM` with that
-network's own RPC URL, passphrase, and freshly deployed contract IDs —
-there is no built-in "local mode" beyond that; the API and web app never
-know or care which network they're pointed at beyond what's configured.
-
-## Testing
-
-| Layer | Command | What it covers |
+| Layer | Command | Coverage and Boundary |
 |---|---|---|
-| Contracts | `cargo test --workspace`, `cargo clippy --workspace --all-targets`, `cargo fmt --all -- --check` | Contract unit/integration tests, lints, formatting |
-| API | `cd apps/api && go test -p 1 ./...` (add `-race` for the race build) | Validation, idempotency, DB behavior via the real isolated Postgres instance, one genuine Testnet RPC round-trip (skippable with `SKIP_LIVE_NETWORK_TESTS=1`), transaction-lifecycle and reconciliation logic |
-| Web unit | `pnpm --filter @carefund/web run test` (Vitest) | Pure logic only — currently the shared agreement-form validation (`apps/web/lib/agreement-form-validation.ts`) |
-| Web E2E | `pnpm --filter @carefund/web run test:e2e` (Playwright) | This app's own UI: navigation, forms, accessibility (automated axe-core scans), and API-response handling |
+| Contracts | `cargo test --workspace` | State machine rules, deadlines, overflow checks |
+| Contracts Lint | `cargo clippy --workspace --all-targets -- -D warnings -A deprecated -A clippy::too-many-arguments` | Strict contract compiler lints |
+| Contracts Format | `cargo fmt --all -- --check` | Formatting checks |
+| API Units & DB | `cd apps/api && go test -p 1 ./...` | REST routes, idempotency, isolated Postgres tests |
+| API Race Check | `cd apps/api && go test -race -p 1 ./...` | Race condition verification across goroutines |
+| Web Unit | `pnpm --filter @carefund/web run test` | Vitest tests for form validation logic |
+| Web E2E | `pnpm --filter @carefund/web run test:e2e` | Playwright tests for UI rendering and axe-core accessibility |
+| Documentation | `cd docs-site && mdbook build && lychee ...` | Static book build and link integrity validation |
 
-**`go test -p 1` is mandatory**, not a style preference: `internal/store`
-and `internal/api` both truncate shared tables in the same live Postgres
-instance during test cleanup, and Go's default cross-package test
-parallelism races those truncations against each other.
+*Note on `go test -p 1`*: This flag is mandatory. Tests truncate shared tables in the isolated PostgreSQL database during cleanup; parallel package execution causes data races.
 
-**What the E2E suite does *not* do**, and never claims to: it runs against
-a plain browser with no Freighter extension installed and no real backend
-or Testnet RPC reachable at its configured URLs. Tests either exercise
-real (if minimal) app behavior that needs neither — like the genuine
-"Freighter not installed" state, since no extension actually is — or mock
-the backend API response with Playwright's route interception, which is
-noted in each such test file. **None of this is, or is claimed to be, live
-Testnet verification, real wallet signing, or real settlement.** That is
-Phase 10's job, not this suite's; implementing this application layer
-(Phase 7) is a distinct milestone from verifying it against live Testnet
-infrastructure, and this README does not conflate the two.
+*Scope of Web E2E tests*: Playwright runs in headless Chromium without the Freighter extension installed to verify the genuine missing-wallet user experience and mocks API responses. It does not perform live Testnet transactions.
 
-## Known limitations
+## Verification Evidence and Status
 
-- **Agreement intents have no listing endpoint.** A sponsor's "request a
-  new agreement" flow (`/sponsor/agreements/new`) creates an off-chain
-  `agreement_intents` row and shows its ID once, but there is currently no
-  way for a provider to browse pending intents addressed to them through
-  this app — the intent ID must be shared out-of-band. The provider's own
-  "propose a new agreement" flow does not read from intents at all; it
-  takes the same fields directly.
-- **`resolve_dispute` has no UI.** It's admin/deployer-authorized on-chain
-  (`admin.require_auth()`), and no admin authentication or authority
-  exists in this application layer to gate it behind — building that UI
-  would mean either fabricating an admin login this app has no way to
-  authenticate, or leaving a highly consequential control (dispute
-  resolution, fund release) reachable by anyone who opens the page. This
-  is treated as a deliberate scope boundary given the accepted
-  architecture, not an oversight.
-- **No browser was available to manually click through this app during
-  development.** Every UI page was verified via typecheck, lint, a
-  production build, and the automated E2E suite above — not by a human
-  (or an agent driving a real browser) actually looking at rendered
-  pages. Automated axe-core scans catch a meaningful subset of
-  accessibility issues, not all of them; manual keyboard/screen-reader
-  review has not been performed.
-- **This README describes Phase 7 (application layer) completion.** No
-  claim is made here about live Testnet verification, real wallet
-  signing against production Freighter, real settlement, recovery under
-  actual network failure, production readiness, or a completed security
-  audit — those are separate, later milestones and would need their own
-  evidence, not an extension of this one.
+CareFund documents all claims using a transparent evidence taxonomy in [evidence/index.md](./evidence/index.md):
+
+| Area | Status | Verification Summary |
+|---|---|---|
+| Toolchain Pinned Versions | VERIFIED | Validated via `scripts/check-toolchain.sh` |
+| Contracts Deployed to Testnet | VERIFIED | Deployed on 2026-09-27 (`evidence/testnet-2026-09-27.md`) |
+| Full On-Chain Lifecycle | VERIFIED | Create, fund, attest, and settle executed with native SAC tokens |
+| Negative Path Enforcement | VERIFIED LIVE | 5 invalid lifecycle operations simulation-rejected by live contract |
+| API Live Testnet Roundtrip | TESTED LOCALLY | `TestPrepareTransaction_FundLiveTestnet` verified against live contract |
+| Database Restart Recovery | TESTED LOCALLY | Idempotency and reconciliation cursors survive service recreation |
+| Continuous Integration | VERIFIED | Real GitHub Actions workflow passing on ubuntu-latest |
+| Dispute Window Overflow Fix | TESTED LOCALLY | Fix in commit `7fdcade` unit tested; contract redeployment pending |
+| Browser Wallet Testnet Sign-off | UNVERIFIED | Historical Testnet actions used CLI; live browser signing pending |
+| External Security Audit | KNOWN LIMITATION | No independent third-party smart contract audit performed |
+
+### Pre-Submission Redeployment Gate
+The deployed `care-agreement` contract on Testnet (`CD6NC44TOSO2G4RCVHULJUUHI4A52MCAYVAPNKQOLQSATWEK3DRDU2BS`) precedes the dispute-window overflow safety fix (commit `7fdcade`). Redeploying the updated WASM, verifying a fresh Testnet lifecycle, and synchronizing addresses across configuration files is an explicit pre-submission gate.
+
+## Security Model and Limitations
+
+- **Authorization**: On-chain actions strictly require cryptographic signatures via `require_auth()`.
+- **Zero Key Custody**: Private keys are never handled by the backend or web server.
+- **Privacy**: Patient and clinical records are never stored; only 32-byte opaque hashes exist in contracts and databases.
+- **Admin Dispute UI**: Because the application currently lacks an administrative authentication layer, `resolve_dispute` has no web interface to prevent exposing escrow redirection to unauthorized users.
+- **No Production Claims**: CareFund is an open-source development prototype deployed on Stellar Testnet. It is not currently audited or approved for production clinical operations.
+
+For vulnerability reporting procedures, review [SECURITY.md](./SECURITY.md).
+
+## Project Governance and Community
+
+- **License**: [Apache-2.0](./LICENSE)
+- **Contribution Guidelines**: [CONTRIBUTING.md](./CONTRIBUTING.md)
+- **Code of Conduct**: [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
+- **Maintainer**: Hollujay (`locko.charles@gmail.com`)
+- **Roadmap and Next Steps**: [ROADMAP.md](./ROADMAP.md)

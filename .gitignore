@@ -22,4 +22,10 @@ apps/api/carefund-api
 
 # Env
 .env
+.env.local
+apps/web/.env.local
+apps/api/.env
+
+# mdBook
+docs-site/book/
 
