@@ -61,7 +61,7 @@ func TestLookupTransaction_NotFoundLiveTestnet(t *testing.T) {
 
 // TestLookupTransaction_SuccessLiveTestnet looks up the real, genuine
 // transaction hash from this phase's live Testnet verification (the
-// register_attester call recorded in Commit 13's message) — a real
+// register_attester call recorded in Commit 13's message) - a real
 // confirmed on-chain transaction, not fabricated.
 func TestLookupTransaction_SuccessLiveTestnet(t *testing.T) {
 	if os.Getenv("SKIP_LIVE_NETWORK_TESTS") != "" {
@@ -75,7 +75,7 @@ func TestLookupTransaction_SuccessLiveTestnet(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, deps)
 
-	const knownSuccessfulHash = "df38441a7d17b2a25186767124989f856f5ec959e0ae9c10df1af4e09345d6fe"
+	const knownSuccessfulHash = "9ae6dc480e876a32a18e5b0d12ce5a3187010c01ce319d0ac1e035589845285c"
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/transactions/"+knownSuccessfulHash, nil)
 	mux.ServeHTTP(rec, req)

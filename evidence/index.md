@@ -44,3 +44,11 @@ and something outside this session's control prevents verification).
 | Pre-Deployment Hardening: Funding Deadline Boundary | `contracts/care-agreement/src/test.rs` exact boundary tests verified; funding valid at now == fd, expire strictly past fd | 2026-10-09 | TESTED LOCALLY |
 | Pre-Deployment Hardening: Checked Surplus Math | `contracts/care-agreement/src/lib.rs` checked_sub enforced in settle and resolve_dispute | 2026-10-09 | TESTED LOCALLY |
 | Pre-Deployment Hardening: CI SDK Automation | `.github/workflows/ci.yml` builds bindings, runs SDK typecheck and unit tests in Web (Next.js) job | 2026-10-09 | TESTED LOCALLY |
+| Block 3B Provider Registry Deployment | `evidence/testnet-2026-10-09-block3b.md`, contract `CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS` | 2026-10-09 | VERIFIED |
+| Block 3B Care Agreement Deployment | `evidence/testnet-2026-10-09-block3b.md`, contract `CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O` | 2026-10-09 | VERIFIED |
+| Block 3B Live On-Chain Settlement with Surplus Refund | `evidence/testnet-2026-10-09-block3b.md`, agreement 1, tx `9ae6dc48...` permissionless settle | 2026-10-09 | VERIFIED |
+| Block 3B Live On-Chain Funded Expiry Refund | `evidence/testnet-2026-10-09-block3b.md`, agreement 3, tx `4d1b15c0...` 100% escrow refund | 2026-10-09 | VERIFIED |
+| Block 3B Live On-Chain Dispute Resolution | `evidence/testnet-2026-10-09-block3b.md`, agreement 4, tx `55bfa433...` admin refund | 2026-10-09 | VERIFIED |
+| Block 3B Live Escrow Pooling Isolation | `evidence/testnet-2026-10-09-block3b.md`, agreements 3 and 4 concurrent escrow verification | 2026-10-09 | VERIFIED |
+| Block 3B API Background Reconciliation Live Testnet | `evidence/testnet-2026-10-09-block3b.md`, Go API worker reconciled tx `9ae6dc48...` to confirmed | 2026-10-09 | VERIFIED |
+| Block 3B Interactive Browser Wallet Signing | `evidence/testnet-2026-10-09-block3b.md`, requires manual maintainer interaction with browser extension | 2026-10-09 | AWAITING MAINTAINER INTERACTION |

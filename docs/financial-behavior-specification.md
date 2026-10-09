@@ -51,6 +51,5 @@ For every agreement initialized with `funding_amount = F` and `settlement_amount
    - Proactive TTL extension is called on every agreement operation.
 2. **Archival Resilience**:
    - Dormant agreements past 30 days are moved to cold archival storage by Soroban Protocol 20+ host rules.
-   - Escrow funds held in the contract account by the Stellar Asset Contract remain completely secure and intact.
-   - Any actor can submit a Stellar `RestoreFootprintOp` transaction to restore the archived persistent key to live state, after which `settle()`, `expire()`, or `resolve_dispute()` executes normally.
+   - Since Stellar Protocol 23, transaction simulation automatically populates the restore list in the invocation footprint, so that contract calls auto-restore archived persistent entries directly within `InvokeHostFunctionOp`. Standalone `RestoreFootprintOp` remains available as an operator fallback.
    - Archival never causes permanent fund loss.

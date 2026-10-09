@@ -19,7 +19,13 @@ check "Go" "go1.27.1" "$(go version)"
 check "Node" "v24.21.0" "$(node --version)"
 check "pnpm" "12.5.1" "$(pnpm --version)"
 check "Rust" "1.98.1" "$(rustc --version)"
-check "Stellar CLI" "27.0.0" "$(stellar --version | head -n1)"
+stellar_actual="$(stellar --version | head -n1)"
+if [[ "$stellar_actual" == *"28.1.0"* || "$stellar_actual" == *"27.0.0"* ]]; then
+  echo "OK: Stellar CLI -> $stellar_actual"
+else
+  echo "MISMATCH: Stellar CLI expected '28.1.0' or '27.0.0', got '$stellar_actual'" >&2
+  fail=1
+fi
 
 pg_version=$(PGPASSWORD=carefund_dev psql -h 127.0.0.1 -p 5439 -U carefund -d carefund -tAc "SELECT version();" 2>&1) || {
   echo "MISMATCH: PostgreSQL could not connect to isolated instance on port 5439: $pg_version" >&2

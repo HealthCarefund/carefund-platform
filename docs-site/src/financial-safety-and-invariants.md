@@ -92,7 +92,9 @@ CareFund utilizes Soroban storage tiers designed for security, predictable rent 
 - Every state-reading or state-modifying entry point (`create_agreement`, `get_agreement`, `fund`, `attest_care`, `open_dispute`, `settle`, `resolve_dispute`, `expire`) automatically invokes `extend_ttl` on both the agreement persistent key and the contract instance.
 
 ### State Archival and Restoration Model
-Under Soroban Protocol 20+ State Archival (CAP-0046):
+Under Soroban State Archival rules:
 1. **No Permanent Fund Loss**: If an agreement remains inactive for longer than its 30-day TTL (for instance, during a prolonged dispute or long-horizon care deadline), its persistent storage entry enters the `Archived` state. Deposited tokens held in the Stellar Asset Contract (SAC) escrow remain completely secure and unaffected.
-2. **Restoration via `RestoreFootprintOp`**: Archived persistent entries can be restored at any time. When a transaction simulation indicates that an entry is archived, the client or keeper submits a standard Stellar transaction containing `RestoreFootprintOp` with the archived ledger key.
-3. **Resumption of Settlement**: Once restored to live persistent storage, contract execution (`settle`, `expire`, or `resolve_dispute`) proceeds immediately and finalizes the financial disbursement as specified.
+2. **Auto-Restoration via Simulation (Protocol 23+)**: Since Stellar Protocol 23, transaction simulation automatically detects archived persistent and instance entries and includes them in the transaction footprint restore list (`restorePreamble`). Normal contract invocations (`InvokeHostFunctionOp`) auto-restore archived entries as part of the invocation, accounting for the appropriate rent/restoration fee without requiring a separate transaction.
+3. **Standalone Fallback via `RestoreFootprintOp`**: For exceptional scenarios (such as batch pre-restoration or separate fee-payer sponsorship), callers can submit a standalone `RestoreFootprintOp` transaction to restore the archived persistent key prior to invocation.
+4. **Resumption of Settlement**: Once restored, contract execution (`settle`, `expire`, or `resolve_dispute`) finalizes the escrow disbursement exactly as specified.
+
