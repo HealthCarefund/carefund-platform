@@ -46,7 +46,7 @@ The `care-agreement` contract (`contracts/care-agreement`) orchestrates the cond
 | `Requested` | Agreement terms defined, awaiting sponsor deposit | 0 |
 | `Funded` | Sponsor tokens escrowed in contract; clinic delivers care | Equal to `funding_amount` |
 | `CareConfirmed` | Attester recorded verified care delivery hash | Equal to `funding_amount` |
-| `Settled` | Escrow paid out to provider; terminal state | 0 (or retained difference) |
+| `Settled` | Escrow paid out to provider; surplus refunded to sponsor | 0 |
 | `Cancelled` | Provider cancelled un-funded proposal; terminal state | 0 |
 | `Expired` | Deadline lapsed without required action; terminal state | 0 (refunded to sponsor if funded) |
 | `Disputed` | Formal disagreement raised; actions frozen pending admin | Locked in contract |
@@ -89,18 +89,18 @@ A sponsor or provider defines the contract parameters:
 ### 4. Settlement (`settle`)
 - **Caller**: Anyone (permissionless deterministic finalization).
 - **Prerequisites**: Agreement must be in `CareConfirmed` state and current ledger timestamp must be `> care_deadline + dispute_window_secs` (dispute window has elapsed).
-- **Execution**: Transfers `settlement_amount` from contract to `provider`, and atomically refunds any surplus (`funding_amount - settlement_amount`) to `sponsor`. State transitions to `Settled`. Contract escrow balance drops to zero.
+- **Execution**: Transfers `settlement_amount` from contract to `provider`, and atomically refunds any surplus (`funding_amount - settlement_amount`) to `sponsor` via checked subtraction. State transitions to `Settled`. The agreement's escrow liability drops to zero.
 
 ### 5. Disputes (`open_dispute` & `resolve_dispute`)
 - **Opening**: Either sponsor or provider can invoke `open_dispute` during the active dispute window (`care_deadline < now <= care_deadline + dispute_window_secs`).
 - **Resolution**: Contract admin invokes `resolve_dispute`:
   - `DisputeResolution::Resume`: Restores original pre-dispute state.
-  - `DisputeResolution::Settle`: Disburses `settlement_amount` to provider, refunds surplus (`funding_amount - settlement_amount`) to sponsor, and marks agreement `Settled`.
+  - `DisputeResolution::Settle`: Disburses `settlement_amount` to provider, refunds surplus (`funding_amount - settlement_amount`) to sponsor via checked subtraction, and marks agreement `Settled`.
   - `DisputeResolution::Refund`: Returns full deposited `funding_amount` to sponsor and marks agreement `Refunded`.
 
 ### 6. Expiration and Cancellation
 - **`cancel`**: Provider can cancel an un-funded `Requested` agreement.
 - **`expire`**: Anyone can trigger expiration if deadlines lapse:
-  - If in `Requested` after `funding_deadline`: state becomes `Expired` with zero token transfers.
+  - If in `Requested` after `funding_deadline` (`now > funding_deadline`): state becomes `Expired` with zero token transfers. At `now == funding_deadline`, funding is permitted and expiry is rejected with `FundingDeadlineNotReached`.
   - If in `Funded` after `care_deadline + dispute_window_secs` without attestation: state becomes `Expired` and the full deposited escrow is automatically refunded to sponsor.
   - Agreements in `CareConfirmed` cannot be expired (`InvalidState`).

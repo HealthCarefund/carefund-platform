@@ -37,7 +37,10 @@ and something outside this session's control prevents verification).
 | CI actually passes on GitHub Actions | run `36360910262` on commit `5908905`, all three jobs (Contracts, API, Web) green, observed via `gh run watch` and `gh api .../check-runs`, not inferred from YAML | 2026-09-27 | VERIFIED |
 | Branch protection enabled on main | `gh api repos/HealthCarefund/carefund-platform/branches/main/protection`, read back fresh after configuring: required status checks (strict, the three real check names above), PR required, force push disabled, deletion disabled, admin bypass left available (not enforced) | 2026-09-27 | VERIFIED |
 | Block 3A Financial Invariants Review | `evidence/financial-safety-review-2026-10-09.md` defect reproduction and remediation matrix | 2026-10-09 | VERIFIED |
-| Block 3A Escrow Conservation and Surplus Refund | `contracts/care-agreement/src/test.rs` test_red_b3 verified; zero contract balance on settlement | 2026-10-09 | TESTED LOCALLY |
+| Block 3A Escrow Conservation and Surplus Refund | `contracts/care-agreement/src/test.rs` test_red_b3 and test_per_agreement_conservation_vs_aggregate_contract_balance verified; per-agreement escrow liability returns to zero on settlement | 2026-10-09 | TESTED LOCALLY |
 | Block 3A Dispute Window Non-Overlap | `contracts/care-agreement/src/test.rs` test_red_b4 verified; settlement blocked while dispute window active | 2026-10-09 | TESTED LOCALLY |
 | Block 3A Unverified Expiration Escrow Refund | `contracts/care-agreement/src/test.rs` test_red_b1 verified; full refund on Funded expiration | 2026-10-09 | TESTED LOCALLY |
 | Block 3A Permissionless Settlement | `contracts/care-agreement/src/test.rs`, SDK `builders.test.ts`, API `transactions_test.go` | 2026-10-09 | TESTED LOCALLY |
+| Pre-Deployment Hardening: Funding Deadline Boundary | `contracts/care-agreement/src/test.rs` exact boundary tests verified; funding valid at now == fd, expire strictly past fd | 2026-10-09 | TESTED LOCALLY |
+| Pre-Deployment Hardening: Checked Surplus Math | `contracts/care-agreement/src/lib.rs` checked_sub enforced in settle and resolve_dispute | 2026-10-09 | TESTED LOCALLY |
+| Pre-Deployment Hardening: CI SDK Automation | `.github/workflows/ci.yml` builds bindings, runs SDK typecheck and unit tests in Web (Next.js) job | 2026-10-09 | TESTED LOCALLY |

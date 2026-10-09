@@ -127,12 +127,15 @@ this document.
 
 ## Escrow safety and financial invariants
 
-In Block 3A, the protocol established and verified five core financial invariants:
-- **Full Escrow Conservation**: Settlement atomically disburses the agreed settlement amount to the provider and refunds any surplus escrow (funding amount minus settlement amount) back to the sponsor. No tokens remain stranded in contract escrow.
+In Block 3A and the pre-deployment hardening pass, the protocol established and verified core financial and operational invariants:
+- **Full Escrow Conservation**: Settlement atomically disburses the agreed settlement amount to the provider and refunds any surplus escrow (funding amount minus settlement amount) back to the sponsor via checked arithmetic. Per-agreement escrow liability returns to exactly zero.
+- **Per-Agreement vs Aggregate Accounting**: Escrow conservation applies per agreement. The contract's aggregate token balance equals the sum of all active, unfinalized escrows and returns to zero when all agreements finalize.
 - **Dispute Window Non-Overlap**: Settlement is strictly prohibited while the dispute window remains active, preventing race conditions against dispute filings.
 - **Permissionless Finalization**: Settlement parameters are immutable on-chain; any caller may trigger settlement once the dispute window elapses, preventing counterparty settlement veto.
+- **Strict Funding Boundary Timing**: Expiration of an un-funded agreement is strictly permitted only after the funding deadline has passed (`now > funding_deadline`). At `now == funding_deadline`, funding is permitted and expiry is rejected with `FundingDeadlineNotReached`.
 - **Escrow Refund on Expiration**: Agreements expiring in the Funded state without attestation automatically refund the full deposit back to the sponsor. Agreements with attested care cannot be expired.
 - **Conserved Dispute Resolution**: Dispute resolution via `Settle` disburses the settlement amount to the provider and refunds surplus to the sponsor; resolution via `Refund` returns the full deposit to the sponsor.
+- **Storage Durability and Archival Restoration**: Agreement entries use persistent storage with proactive TTL extensions. Inactive agreements that become archived after 30 days do not lose custody tokens; entries can be restored via `RestoreFootprintOp` to complete settlement.
 
 ## Testnet status
 
