@@ -88,7 +88,7 @@ export default function NewAgreementPage() {
       <h1 className="text-3xl font-semibold tracking-tight">Propose a new agreement</h1>
       <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
         This creates the agreement directly on-chain, signed by your connected wallet as the
-        provider. Commitments must be pre-computed hashes — never enter patient or clinical data
+        provider. Commitments must be pre-computed hashes; never enter patient or clinical data
         directly.
       </p>
 

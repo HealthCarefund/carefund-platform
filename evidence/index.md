@@ -25,15 +25,15 @@ and something outside this session's control prevents verification).
 | Settlement transfers real asset on-chain | `evidence/testnet-2026-09-27.md`, tx `70d8fff0...`, provider Horizon balance increased | 2026-09-27 | VERIFIED |
 | Contract rejects unauthorized/invalid-state/timing violations | `evidence/testnet-2026-09-27.md` failure paths table, 5 scenarios | 2026-09-27 | VERIFIED LIVE (simulation-rejected) |
 | API transaction-preparation pipeline works against live contract | `apps/api/internal/api/transactions_test.go` `TestPrepareTransaction_FundLiveTestnet`, run without `SKIP_LIVE_NETWORK_TESTS` | 2026-09-27 | TESTED LOCALLY |
-| Full background reconciliation loop against these live transactions | not exercised this block | 2026-09-27 | UNVERIFIED |
-| Unauthorized attester action rejected live | not exercised this block | 2026-09-27 | UNVERIFIED |
-| resolve_dispute admin action | no admin UI exists in this application | 2026-09-27 | KNOWN LIMITATION |
-| Wrong-network signing prevention | unit tested in `packages/sdk/src/config.ts`, not exercised against a second live network | 2026-09-27 | LOGICALLY COVERED |
-| Recovery and failure-injection scenarios | see `evidence/recovery-2026-09-27.md` | 2026-09-27 | see file |
-| Rust dependency scan | `cargo audit`: 0 vulnerabilities, 1 unmaintained-crate warning (`paste`, transitive via soroban-sdk) | 2026-09-27 | VERIFIED |
-| Go dependency scan | `govulncheck ./...`: found and fixed GO-2026-5970 (`golang.org/x/text`), 0 vulnerabilities in called code after the fix | 2026-09-27 | VERIFIED |
-| Node dependency scan | `pnpm audit` and `pnpm audit --prod`: no known vulnerabilities | 2026-09-27 | VERIFIED |
-| Contract security fix: dispute window overflow | `contracts/care-agreement/src/lib.rs` create_agreement now rejects an overflowing care_deadline/dispute_window_secs combination, regression test added | 2026-09-27 | VERIFIED (fixed, tested, deployed WASM not yet redeployed to the Testnet contract from this block; see limitations) |
+| Full background reconciliation loop against these live transactions | Verified live in Block 3B against transaction `9ae6dc48...` and Agreement #7 replay | 2026-10-09 | VERIFIED |
+| Unauthorized attester action rejected live | Negative path rejected in Block 3B live RPC simulation matrix | 2026-10-09 | VERIFIED LIVE (simulation-rejected) |
+| resolve_dispute admin action | no admin UI exists in this application | 2026-10-09 | KNOWN LIMITATION |
+| Wrong-network signing prevention | unit tested in `packages/sdk/src/config.ts`, not exercised against a second live network | 2026-10-09 | LOGICALLY COVERED |
+| Recovery and failure-injection scenarios | see `evidence/recovery-2026-09-27.md` and `evidence/testnet-2026-10-09-block3b.md` | 2026-10-09 | see files |
+| Rust dependency scan | `cargo audit`: 0 vulnerabilities, 1 unmaintained-crate warning (`paste` 1.0.15, transitive via soroban-sdk) | 2026-10-09 | VERIFIED |
+| Go dependency scan | `govulncheck ./...`: 0 critical vulnerabilities; 10 non-critical advisories in Go 1.27.1 stdlib / x:text | 2026-10-09 | VERIFIED |
+| Node dependency scan | `pnpm audit`: 0 critical vulnerabilities; 9 advisories (1 low, 4 mod, 4 high) in `next` < 16.3.8 | 2026-10-09 | VERIFIED |
+| Contract security fix: dispute window overflow | `contracts/care-agreement/src/lib.rs` create_agreement rejects overflowing care_deadline/dispute_window_secs combination; redeployed to Testnet in Block 3B | 2026-10-09 | VERIFIED |
 | CI actually passes on GitHub Actions | run `36360910262` on commit `5908905`, all three jobs (Contracts, API, Web) green, observed via `gh run watch` and `gh api .../check-runs`, not inferred from YAML | 2026-09-27 | VERIFIED |
 | Branch protection enabled on main | `gh api repos/HealthCarefund/carefund-platform/branches/main/protection`, read back fresh after configuring: required status checks (strict, the three real check names above), PR required, force push disabled, deletion disabled, admin bypass left available (not enforced) | 2026-09-27 | VERIFIED |
 | Block 3A Financial Invariants Review | `evidence/financial-safety-review-2026-10-09.md` defect reproduction and remediation matrix | 2026-10-09 | VERIFIED |

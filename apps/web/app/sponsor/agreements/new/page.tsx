@@ -91,7 +91,7 @@ export default function NewSponsorAgreementPage() {
           <p className="text-sm text-ink-600 dark:text-ink-300">
             Intent <span className="font-mono">{submit.intent.id}</span> was recorded off-chain
             with status <span className="font-medium">{submit.intent.status}</span>. Share this
-            intent ID with the provider — they must call <code>create_agreement</code> on-chain
+            intent ID with the provider; they must call <code>create_agreement</code> on-chain
             themselves before it will appear as a real agreement. This request does not, by
             itself, create or fund anything on-chain.
           </p>
@@ -105,8 +105,8 @@ export default function NewSponsorAgreementPage() {
       <h1 className="text-3xl font-semibold tracking-tight">Request a new agreement</h1>
       <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
         This records an off-chain request only. The named provider must still create the
-        agreement on-chain before it can be funded — sponsors cannot create agreements directly.
-        Commitments must be pre-computed hashes — never enter patient or clinical data directly.
+        agreement on-chain before it can be funded, as sponsors cannot create agreements directly.
+        Commitments must be pre-computed hashes; never enter patient or clinical data directly.
       </p>
 
       <form onSubmit={onSubmit} className="mt-8 space-y-5" noValidate>

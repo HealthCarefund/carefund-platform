@@ -50,7 +50,7 @@ export default function AttestCarePage() {
       <h1 className="text-3xl font-semibold tracking-tight">Attest care delivered</h1>
       <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
         Confirms, on-chain, that care under agreement #{id} was delivered. This must be signed by
-        the attester wallet named on the agreement — the contract will reject any other signer.
+        the attester wallet named on the agreement, as the contract will reject any other signer.
       </p>
 
       <form onSubmit={onSubmit} className="mt-8 space-y-5" noValidate>

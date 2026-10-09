@@ -82,7 +82,7 @@ PostgreSQL never stores:
 
 ### 4. Monorepo Structure
 
-- `contracts/provider-registry`: Soroban contract for provider accredited records and attester authorization bindings.
+- `contracts/provider-registry`: Soroban contract for provider registration records and attester authorization bindings.
 - `contracts/care-agreement`: Soroban contract managing agreement state, deposit escrow, deadlines, and multi-signature transitions.
 - `packages/types`: Shared TypeScript definitions, branded types (`StellarAddress`, `CommitmentHash`, `AgreementId`), and JSON schemas.
 - `packages/sdk`: TypeScript library for Soroban transaction assembly, simulation, Freighter wallet interaction, and contract bindings.

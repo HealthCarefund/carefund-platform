@@ -93,7 +93,7 @@ export default function TransactionStatusPage() {
                     <dt className="text-ink-500 dark:text-ink-400">Error</dt>
                     <dd className="text-danger-500">
                       {load.result.reconciliation.errorCode}
-                      {load.result.reconciliation.errorDetail ? ` — ${load.result.reconciliation.errorDetail}` : ""}
+                      {load.result.reconciliation.errorDetail ? `: ${load.result.reconciliation.errorDetail}` : ""}
                     </dd>
                   </div>
                 )}

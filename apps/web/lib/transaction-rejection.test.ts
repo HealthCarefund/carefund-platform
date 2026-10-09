@@ -19,9 +19,7 @@ describe("Wallet signature rejection handling", () => {
     const stateHistory: TransactionFlowState[] = [];
 
     // Simulate the transaction flow execution
-    let currentState: TransactionFlowState = { phase: "idle" };
     const setState = (next: TransactionFlowState) => {
-      currentState = next;
       stateHistory.push(next);
     };
 

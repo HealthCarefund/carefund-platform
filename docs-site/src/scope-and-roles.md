@@ -8,7 +8,7 @@ CareFund coordinates interactions across four distinct system roles. Every actio
 The administrator represents the governing entity or protocol deployer.
 - **Responsibilities**:
   - Initializes `provider-registry` and `care-agreement` contracts.
-  - Registers accredited healthcare providers in the registry.
+  - Registers healthcare providers in the registry.
   - Updates provider statuses (Active, Suspended, Revoked).
   - Registers authorized attesters linked to specific providers.
   - Adjudicates and resolves disputed agreements (`resolve_dispute`).
@@ -25,7 +25,7 @@ Sponsors are philanthropic organizations, donor funds, or individuals allocating
 - **Authorization**: Protected on-chain by `sponsor.require_auth()`.
 
 ### 3. Healthcare Provider (`Provider`)
-Providers are clinics, hospitals, or accredited medical practitioners delivering care.
+Providers are registered clinics, hospitals, or medical entities delivering care.
 - **Responsibilities**:
   - Registers their Stellar address and operational reference commitment via administrator onboarding.
   - Proposes agreements specifying funding amount, settlement amount, and deadlines.

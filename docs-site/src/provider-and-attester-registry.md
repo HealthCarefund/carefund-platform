@@ -22,7 +22,7 @@ pub enum ActorStatus {
 ### Records Structure
 
 #### Provider Record
-A provider represents an accredited healthcare delivery organization:
+A provider represents a registered healthcare delivery organization:
 ```rust
 pub struct ProviderRecord {
     pub status: ActorStatus,
