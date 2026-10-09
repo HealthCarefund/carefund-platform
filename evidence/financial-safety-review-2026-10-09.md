@@ -55,3 +55,28 @@ The protocol documentation states that unfunded `Requested` agreements can expir
 
 ### B8. Documentation Inaccuracies
 Public documentation states that `expire()` automatically returns funds, references an un-implemented `refund()` function, claims `create_agreement` accepts sponsor-or-provider authorization (when code requires provider), and describes settlement as autonomous despite requiring sponsor authorization.
+
+---
+
+## Pre-Deployment Hardening Addendum (2026-10-09)
+
+Following remediation of defects B1 through B8, a focused pre-deployment hardening pass resolved four critical operational and edge-case concerns:
+
+1. **Funding Deadline Boundary Precision**:
+   - Previously, both `fund()` and `expire()` were valid at `now == funding_deadline`.
+   - The policy now strictly permits `fund()` when `now <= funding_deadline` and strictly permits `expire()` on `Requested` only after the deadline has passed (`now > funding_deadline`).
+   - Verified via regression tests `test_funding_deadline_exact_boundary_cannot_expire_but_can_fund` and `test_funding_deadline_past_boundary_cannot_fund_but_can_expire`.
+
+2. **Checked Arithmetic Reconciliation**:
+   - Surplus calculations in `settle()` and `resolve_dispute(Settle)` enforce `checked_sub(settlement_amount).ok_or(AgreementError::ArithmeticOverflow)?`.
+   - Guaranteed by creation invariant $S \le F$ and defended by checked arithmetic at runtime.
+
+3. **Per-Agreement vs Aggregate Escrow Accounting**:
+   - Clarified across documentation that individual agreement escrow liabilities drop to zero on finalization, while the contract address holds a pooled balance equal to $\sum_{k \in \text{active}} F_k$. Verified via `test_per_agreement_conservation_vs_aggregate_contract_balance`.
+
+4. **Soroban State Archival and Restoration**:
+   - Confirmed that dormant agreements past 30 days are archived under Soroban Protocol 20+ rules without loss of escrow tokens in the SAC.
+   - Verified that `RestoreFootprintOp` transactions restore archived persistent state, permitting settlement to resume cleanly.
+
+5. **CI Automation for TypeScript SDK**:
+   - Added bindings build, SDK typecheck, and SDK unit tests directly into the PR verification workflow.

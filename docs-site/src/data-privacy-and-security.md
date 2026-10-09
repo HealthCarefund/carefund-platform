@@ -51,6 +51,15 @@ Soroban smart contracts enforce role-based access control using `Address::requir
 
 ---
 
+## Storage Durability and State Archival
+
+CareFund contracts rely on Soroban Protocol 20+ persistent storage for agreement records and instance storage for contract configuration.
+- **Proactive TTL Extension**: Every read or write contract operation bumps the Time To Live (TTL) of the agreement entry and the contract instance to ~30 days (518,400 ledgers).
+- **Archival Protection**: If an agreement remains dormant beyond 30 days without interaction, Soroban moves the persistent entry to cold archival storage. Escrowed tokens remain in the contract's Stellar Asset Contract account and are never destroyed or lost.
+- **Restoration Workflow**: Anyone can submit a standard Stellar transaction containing `RestoreFootprintOp` specifying the archived ledger key. Once restored, all settlement, expiry, and dispute adjudication flows proceed normally.
+
+---
+
 ## Dependency Vulnerability Scans
 
 As part of repository hygiene, automated dependency scanners are executed periodically:
