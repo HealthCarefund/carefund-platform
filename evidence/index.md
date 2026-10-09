@@ -51,4 +51,4 @@ and something outside this session's control prevents verification).
 | Block 3B Live On-Chain Dispute Resolution | `evidence/testnet-2026-10-09-block3b.md`, agreement 4, tx `55bfa433...` admin refund | 2026-10-09 | VERIFIED |
 | Block 3B Live Escrow Pooling Isolation | `evidence/testnet-2026-10-09-block3b.md`, agreements 3 and 4 concurrent escrow verification | 2026-10-09 | VERIFIED |
 | Block 3B API Background Reconciliation Live Testnet | `evidence/testnet-2026-10-09-block3b.md`, Go API worker reconciled tx `9ae6dc48...` to confirmed | 2026-10-09 | VERIFIED |
-| Block 3B Interactive Browser Wallet Signing | `evidence/testnet-2026-10-09-block3b.md`, requires manual maintainer interaction with browser extension | 2026-10-09 | AWAITING MAINTAINER INTERACTION |
+| Block 3B Interactive Browser Wallet Signing | `evidence/testnet-2026-10-09-block3b.md`, Agreement #8 full browser lifecycle (tx `d2197fb8...`, `019fc50f...`, `b7494722...`) and signature rejection verified | 2026-10-09 | VERIFIED |

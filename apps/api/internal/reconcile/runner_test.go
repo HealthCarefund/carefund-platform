@@ -11,8 +11,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	protocol "github.com/stellar/go-stellar-sdk/protocols/rpc"
+	"github.com/stellar/go-stellar-sdk/xdr"
 
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/migrate"
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/sorobanenc"
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/store"
 )
 
@@ -75,6 +77,7 @@ type fakeRPC struct {
 	getTransaction func(hash string) (protocol.GetTransactionResponse, error)
 	getEvents      func(req protocol.GetEventsRequest) (protocol.GetEventsResponse, error)
 	health         func() (protocol.GetHealthResponse, error)
+	simulate       func(envelopeXDR string) (protocol.SimulateTransactionResponse, error)
 }
 
 func (f *fakeRPC) GetTransaction(_ context.Context, hash string) (protocol.GetTransactionResponse, error) {
@@ -92,6 +95,12 @@ func (f *fakeRPC) Health(_ context.Context) (protocol.GetHealthResponse, error) 
 	}
 	return f.health()
 }
+func (f *fakeRPC) Simulate(_ context.Context, envelopeXDR string) (protocol.SimulateTransactionResponse, error) {
+	if f.simulate == nil {
+		return protocol.SimulateTransactionResponse{}, nil
+	}
+	return f.simulate(envelopeXDR)
+}
 
 func TestReconcileTransactions_UpdatesToConfirmed(t *testing.T) {
 	s := newTestStore(t)
@@ -106,7 +115,7 @@ func TestReconcileTransactions_UpdatesToConfirmed(t *testing.T) {
 			TransactionDetails: protocol.TransactionDetails{Status: protocol.TransactionStatusSuccess, Ledger: 999},
 		}, nil
 	}}
-	runner := New(s, rpc, testLogger(), time.Hour, "C"+strings.Repeat("A", 55), "C"+strings.Repeat("B", 55))
+	runner := New(s, rpc, testLogger(), time.Hour, "C"+strings.Repeat("A", 55), "C"+strings.Repeat("B", 55), "C"+strings.Repeat("S", 55))
 	runner.reconcileTransactions(ctx)
 
 	got, err := s.GetTransactionByHash(ctx, hash)
@@ -134,7 +143,7 @@ func TestReconcileTransactions_UpdatesToFailed(t *testing.T) {
 			TransactionDetails: protocol.TransactionDetails{Status: protocol.TransactionStatusFailed, Ledger: 1000},
 		}, nil
 	}}
-	runner := New(s, rpc, testLogger(), time.Hour, "C"+strings.Repeat("A", 55), "C"+strings.Repeat("B", 55))
+	runner := New(s, rpc, testLogger(), time.Hour, "C"+strings.Repeat("A", 55), "C"+strings.Repeat("B", 55), "C"+strings.Repeat("S", 55))
 	runner.reconcileTransactions(ctx)
 
 	got, err := s.GetTransactionByHash(ctx, hash)
@@ -159,7 +168,7 @@ func TestReconcileTransactions_LeavesStatusUnchangedOnNotFound(t *testing.T) {
 			TransactionDetails: protocol.TransactionDetails{Status: protocol.TransactionStatusNotFound},
 		}, nil
 	}}
-	runner := New(s, rpc, testLogger(), time.Hour, "C"+strings.Repeat("A", 55), "C"+strings.Repeat("B", 55))
+	runner := New(s, rpc, testLogger(), time.Hour, "C"+strings.Repeat("A", 55), "C"+strings.Repeat("B", 55), "C"+strings.Repeat("S", 55))
 	runner.reconcileTransactions(ctx)
 
 	got, err := s.GetTransactionByHash(ctx, hash)
@@ -194,7 +203,7 @@ func TestReconcileTransactions_RPCFailureDoesNotAbortOtherHashes(t *testing.T) {
 			TransactionDetails: protocol.TransactionDetails{Status: protocol.TransactionStatusSuccess, Ledger: 1},
 		}, nil
 	}}
-	runner := New(s, rpc, testLogger(), time.Hour, "C"+strings.Repeat("A", 55), "C"+strings.Repeat("B", 55))
+	runner := New(s, rpc, testLogger(), time.Hour, "C"+strings.Repeat("A", 55), "C"+strings.Repeat("B", 55), "C"+strings.Repeat("S", 55))
 	runner.reconcileTransactions(ctx)
 
 	ok, err := s.GetTransactionByHash(ctx, okHash)
@@ -202,7 +211,7 @@ func TestReconcileTransactions_RPCFailureDoesNotAbortOtherHashes(t *testing.T) {
 		t.Fatalf("GetTransactionByHash(ok): %v", err)
 	}
 	if ok.Status != "confirmed" {
-		t.Errorf("okHash Status = %q, want confirmed — one RPC failure must not block reconciling other hashes", ok.Status)
+		t.Errorf("okHash Status = %q, want confirmed - one RPC failure must not block reconciling other hashes", ok.Status)
 	}
 
 	failed, err := s.GetTransactionByHash(ctx, failHash)
@@ -219,6 +228,7 @@ func TestReconcileEvents_PersistsCursorAndIngestsIdempotently(t *testing.T) {
 	ctx := context.Background()
 	providerRegistryID := "C" + strings.Repeat("A", 55)
 	careAgreementID := "C" + strings.Repeat("B", 55)
+	settlementAssetID := "C" + strings.Repeat("X", 55)
 
 	if err := s.UpsertAgreement(ctx, store.CareAgreement{
 		AgreementID:               7,
@@ -229,7 +239,7 @@ func TestReconcileEvents_PersistsCursorAndIngestsIdempotently(t *testing.T) {
 		ServiceCommitment:         make32(0x02),
 		FundingAmount:             "1000000",
 		SettlementAmount:          "900000",
-		SettlementAssetContractID: "C" + strings.Repeat("X", 55),
+		SettlementAssetContractID: settlementAssetID,
 		FundingDeadline:           1_700_000_000,
 		CareDeadline:              1_700_100_000,
 		DisputeWindowSecs:         86_400,
@@ -255,7 +265,7 @@ func TestReconcileEvents_PersistsCursorAndIngestsIdempotently(t *testing.T) {
 		},
 	}
 
-	runner := New(s, rpc, testLogger(), time.Hour, providerRegistryID, careAgreementID)
+	runner := New(s, rpc, testLogger(), time.Hour, providerRegistryID, careAgreementID, settlementAssetID)
 	runner.reconcileEvents(ctx)
 
 	page, err := s.ListEventsForAgreement(ctx, 7, 0, 10)
@@ -286,5 +296,260 @@ func TestReconcileEvents_PersistsCursorAndIngestsIdempotently(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Errorf("getEvents calls = %d, want 2", calls)
+	}
+}
+
+func walletAddressValueXDR(t *testing.T, wallet string) string {
+	t.Helper()
+	val, err := sorobanenc.Address(wallet)
+	if err != nil {
+		t.Fatalf("sorobanenc.Address(%q): %v", wallet, err)
+	}
+	b, err := xdr.MarshalBase64(val)
+	if err != nil {
+		t.Fatalf("marshaling address value: %v", err)
+	}
+	return b
+}
+
+func makeProviderScVal(providerRef [32]byte, status string) xdr.ScVal {
+	symRef := xdr.ScSymbol("provider_ref")
+	symStatus := xdr.ScSymbol("status")
+	refVal, _ := sorobanenc.Bytes32(providerRef[:])
+	statusVal := sorobanenc.Symbol(status)
+	m := xdr.ScMap{
+		{Key: xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &symRef}, Val: refVal},
+		{Key: xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &symStatus}, Val: statusVal},
+	}
+	mPtr := &m
+	return xdr.ScVal{Type: xdr.ScValTypeScvMap, Map: &mPtr}
+}
+
+func makeAttesterScVal(providerWallet string, credentialRef [32]byte, status string) xdr.ScVal {
+	symProvider := xdr.ScSymbol("provider")
+	symCred := xdr.ScSymbol("credential_ref")
+	symStatus := xdr.ScSymbol("status")
+	provAddr, _ := sorobanenc.Address(providerWallet)
+	credVal, _ := sorobanenc.Bytes32(credentialRef[:])
+	statusVal := sorobanenc.Symbol(status)
+	m := xdr.ScMap{
+		{Key: xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &symProvider}, Val: provAddr},
+		{Key: xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &symCred}, Val: credVal},
+		{Key: xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &symStatus}, Val: statusVal},
+	}
+	mPtr := &m
+	return xdr.ScVal{Type: xdr.ScValTypeScvMap, Map: &mPtr}
+}
+
+func TestReconcileEvents_EntityFirstReconciliation(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	providerRegistryID := "CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS"
+	careAgreementID := "CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O"
+	settlementAssetID := "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+
+	// Agreement 7 is deliberately NOT pre-seeded in the database here.
+	// Entity-first reconcile must fetch it on-chain and insert it before inserting the event.
+	const rawXDR = "AAAAEQAAAAEAAAASAAAADwAAABZhdHRlc3RhdGlvbl9jb21taXRtZW50AAAAAAABAAAADwAAAAthdHRlc3RlZF9hdAAAAAABAAAADwAAAAthdHRlc3RlZF9ieQAAAAABAAAADwAAAAhhdHRlc3RlcgAAABIAAAAAAAAAAH3/zCGtzLQUGKrxls38wdh5L06xwQJSVYDbwek4BYYnAAAADwAAAA1jYXJlX2RlYWRsaW5lAAAAAAAABQAAAABqyPdcAAAADwAAAApjcmVhdGVkX2F0AAAAAAAFAAAAAGrI8+kAAAAPAAAAEWRpc3B1dGVfb3BlbmVkX2F0AAAAAAAAAQAAAA8AAAARZGlzcHV0ZV9vcGVuZWRfYnkAAAAAAAABAAAADwAAAA5kaXNwdXRlX29yaWdpbgAAAAAAEAAAAAEAAAABAAAADwAAAAROb25lAAAADwAAABNkaXNwdXRlX3dpbmRvd19zZWNzAAAAAAUAAAAAAAAASAAAAA8AAAAOZnVuZGluZ19hbW91bnQAAAAAAAoAAAAAAAAAAAAAAAAAmJaAAAAADwAAABBmdW5kaW5nX2RlYWRsaW5lAAAABQAAAABqyPbkAAAADwAAABZwYXRpZW50X3JlZl9jb21taXRtZW50AAAAAAANAAAAIBERERERERERERERERERERERERERERERERERERERERERAAAADwAAAAhwcm92aWRlcgAAABIAAAAAAAAAAGz0qyL2+h41Qg2CM5P5+WYAJbEhf3sL3HL3fbE4gaikAAAADwAAABJzZXJ2aWNlX2NvbW1pdG1lbnQAAAAAAA0AAAAgIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIAAAAPAAAAEXNldHRsZW1lbnRfYW1vdW50AAAAAAAACgAAAAAAAAAAAAAAAAB6EgAAAAAPAAAAB3Nwb25zb3IAAAAAEgAAAAAAAAAA4y3eI3Ih7LlKDamd5ddJPXSjFpPyKK8yAdUQr8ljn7kAAAAPAAAABXN0YXRlAAAAAAAAEAAAAAEAAAABAAAADwAAAAlSZXF1ZXN0ZWQAAAA="
+
+	event := protocol.EventInfo{
+		EventType:       "contract",
+		Ledger:          500,
+		ContractID:      careAgreementID,
+		ID:              "0000002000-0000000000",
+		TransactionHash: strings.Repeat("f", 64),
+		TopicXDR:        []string{symbolTopicXDR(t, "agr_cre")},
+		ValueXDR:        u64ValueXDR(t, 7),
+	}
+
+	retValStr := rawXDR
+	rpc := &fakeRPC{
+		getEvents: func(req protocol.GetEventsRequest) (protocol.GetEventsResponse, error) {
+			return protocol.GetEventsResponse{Events: []protocol.EventInfo{event}, LatestLedger: 501}, nil
+		},
+		simulate: func(envelopeXDR string) (protocol.SimulateTransactionResponse, error) {
+			return protocol.SimulateTransactionResponse{
+				Results: []protocol.SimulateHostFunctionResult{
+					{
+						ReturnValueXDR: &retValStr,
+					},
+				},
+			}, nil
+		},
+	}
+
+	runner := New(s, rpc, testLogger(), time.Hour, providerRegistryID, careAgreementID, settlementAssetID)
+	runner.reconcileEvents(ctx)
+
+	// Verify agreement was automatically mirrored in care_agreements
+	mirrored, err := s.GetAgreement(ctx, 7)
+	if err != nil {
+		t.Fatalf("GetAgreement(7): %v (agreement was not mirrored from chain)", err)
+	}
+	if mirrored.ProviderWallet != "GBWPJKZC635B4NKCBWBDHE7Z7FTAAJNREF7XWC64OL3X3MJYQGUKI453" {
+		t.Errorf("ProviderWallet = %q", mirrored.ProviderWallet)
+	}
+	if mirrored.State != "Requested" {
+		t.Errorf("State = %q, want Requested", mirrored.State)
+	}
+
+	// Verify event was successfully inserted without foreign key violation
+	page, err := s.ListEventsForAgreement(ctx, 7, 0, 10)
+	if err != nil {
+		t.Fatalf("ListEventsForAgreement: %v", err)
+	}
+	if len(page.Events) != 1 || page.Events[0].EventType != "agr_cre" {
+		t.Fatalf("page = %+v", page)
+	}
+}
+
+func TestReconcileEvents_ProviderRegistryIngestion(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	providerRegistryID := "CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS"
+	careAgreementID := "CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O"
+	settlementAssetID := "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+
+	providerWallet := "GBWPJKZC635B4NKCBWBDHE7Z7FTAAJNREF7XWC64OL3X3MJYQGUKI453"
+	attesterWallet := "GB677TBBVXGLIFAYVLYZNTP4YHMHSL2OWHAQEUSVQDN4D2JYAWDCPFRT"
+
+	var providerRef [32]byte
+	copy(providerRef[:], []byte("provider-ref-32-bytes-test-ok!!!"))
+	var credRef [32]byte
+	copy(credRef[:], []byte("attester-cred-32-bytes-test-ok!!"))
+
+	provScVal := makeProviderScVal(providerRef, "Active")
+	provXDR, err := xdr.MarshalBase64(provScVal)
+	if err != nil {
+		t.Fatalf("marshaling provider ScVal: %v", err)
+	}
+
+	attScVal := makeAttesterScVal(providerWallet, credRef, "Active")
+	attXDR, err := xdr.MarshalBase64(attScVal)
+	if err != nil {
+		t.Fatalf("marshaling attester ScVal: %v", err)
+	}
+
+	event1 := protocol.EventInfo{
+		EventType:       "contract",
+		Ledger:          600,
+		ContractID:      providerRegistryID,
+		ID:              "0000003000-0000000000",
+		TransactionHash: strings.Repeat("a", 64),
+		TopicXDR:        []string{symbolTopicXDR(t, "prov_reg")},
+		ValueXDR:        walletAddressValueXDR(t, providerWallet),
+	}
+
+	event2 := protocol.EventInfo{
+		EventType:       "contract",
+		Ledger:          601,
+		ContractID:      providerRegistryID,
+		ID:              "0000003001-0000000000",
+		TransactionHash: strings.Repeat("b", 64),
+		TopicXDR:        []string{symbolTopicXDR(t, "att_reg")},
+		ValueXDR:        walletAddressValueXDR(t, attesterWallet),
+	}
+
+	rpc := &fakeRPC{
+		getEvents: func(req protocol.GetEventsRequest) (protocol.GetEventsResponse, error) {
+			return protocol.GetEventsResponse{Events: []protocol.EventInfo{event1, event2}, LatestLedger: 602}, nil
+		},
+		simulate: func(envelopeXDR string) (protocol.SimulateTransactionResponse, error) {
+			var env xdr.TransactionEnvelope
+			if err := xdr.SafeUnmarshalBase64(envelopeXDR, &env); err == nil && len(env.Operations()) > 0 {
+				op := env.Operations()[0]
+				if op.Body.Type == xdr.OperationTypeInvokeHostFunction && op.Body.InvokeHostFunctionOp != nil {
+					fn := string(op.Body.InvokeHostFunctionOp.HostFunction.InvokeContract.FunctionName)
+					if fn == "get_provider" {
+						ret := provXDR
+						return protocol.SimulateTransactionResponse{
+							Results: []protocol.SimulateHostFunctionResult{{ReturnValueXDR: &ret}},
+						}, nil
+					}
+					if fn == "get_attester" {
+						ret := attXDR
+						return protocol.SimulateTransactionResponse{
+							Results: []protocol.SimulateHostFunctionResult{{ReturnValueXDR: &ret}},
+						}, nil
+					}
+				}
+			}
+			return protocol.SimulateTransactionResponse{}, nil
+		},
+	}
+
+	runner := New(s, rpc, testLogger(), time.Hour, providerRegistryID, careAgreementID, settlementAssetID)
+	runner.reconcileEvents(ctx)
+
+	// Verify provider was ingested
+	prov, err := s.GetProviderByWallet(ctx, providerWallet)
+	if err != nil {
+		t.Fatalf("GetProviderByWallet: %v", err)
+	}
+	if prov.Status != "Active" {
+		t.Errorf("prov.Status = %q, want Active", prov.Status)
+	}
+	if string(prov.ProviderRef) != string(providerRef[:]) {
+		t.Errorf("prov.ProviderRef mismatch")
+	}
+
+	// Verify attester was ingested
+	att, err := s.GetAttesterByWallet(ctx, attesterWallet)
+	if err != nil {
+		t.Fatalf("GetAttesterByWallet: %v", err)
+	}
+	if att.Status != "Active" {
+		t.Errorf("att.Status = %q, want Active", att.Status)
+	}
+	if att.ProviderWallet != providerWallet {
+		t.Errorf("att.ProviderWallet = %q, want %q", att.ProviderWallet, providerWallet)
+	}
+}
+
+func TestReconcileEvents_FailedEventDoesNotAdvanceCursor(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	providerRegistryID := "CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS"
+	careAgreementID := "CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O"
+	settlementAssetID := "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+
+	// Seed an initial cursor
+	initialCursor := "100"
+	if err := s.SetReconciliationCursor(ctx, eventCursorKey, initialCursor); err != nil {
+		t.Fatalf("SetReconciliationCursor: %v", err)
+	}
+
+	event := protocol.EventInfo{
+		EventType:       "contract",
+		Ledger:          150,
+		ContractID:      careAgreementID,
+		ID:              "0000001500-0000000000",
+		TransactionHash: strings.Repeat("e", 64),
+		TopicXDR:        []string{symbolTopicXDR(t, "agr_cre")},
+		ValueXDR:        u64ValueXDR(t, 999),
+	}
+
+	// Simulation returns an error so entity fetching fails
+	rpc := &fakeRPC{
+		getEvents: func(req protocol.GetEventsRequest) (protocol.GetEventsResponse, error) {
+			return protocol.GetEventsResponse{Events: []protocol.EventInfo{event}, LatestLedger: 160}, nil
+		},
+		simulate: func(envelopeXDR string) (protocol.SimulateTransactionResponse, error) {
+			return protocol.SimulateTransactionResponse{
+				Error: "Host function invocation failed",
+			}, nil
+		},
+	}
+
+	runner := New(s, rpc, testLogger(), time.Hour, providerRegistryID, careAgreementID, settlementAssetID)
+	runner.reconcileEvents(ctx)
+
+	// Ensure the cursor was NOT advanced to 161 (LatestLedger + 1)
+	currentCursor, err := s.GetReconciliationCursor(ctx, eventCursorKey)
+	if err != nil {
+		t.Fatalf("GetReconciliationCursor: %v", err)
+	}
+	if currentCursor != initialCursor {
+		t.Errorf("cursor advanced to %q despite failed event ingestion, want %q", currentCursor, initialCursor)
 	}
 }

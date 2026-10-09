@@ -170,7 +170,7 @@ export function useTransactionFlow(getSigner: () => WalletSigner) {
   return { state, run, reset, cancel };
 }
 
-function describeError(err: unknown): string {
+export function describeError(err: unknown): string {
   if (err instanceof WalletSigningRejectedError) {
     return "Wallet declined to sign the transaction.";
   }

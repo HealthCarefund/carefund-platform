@@ -63,7 +63,7 @@ apps/
 ## Core Protocol Workflow
 
 1. **Provider Onboarding**: The contract administrator registers accredited clinics in `provider-registry` (`register_provider`) and authorizes bound attesters (`register_attester`).
-2. **Agreement Proposal**: A provider or sponsor initializes a care agreement (`create_agreement`) specifying token amounts, deadlines, and cryptographic commitment hashes.
+2. **Agreement Proposal**: A registered provider initializes a care agreement (`create_agreement`) specifying token amounts, deadlines, cryptographic commitment hashes, and authorized counterparty addresses. The contract requires provider authorization.
 3. **Escrow Deposit**: The sponsor deposits funds (`fund`) into the `care-agreement` contract via the Stellar Asset Contract (SAC).
 4. **Care Attestation**: Upon procedure completion, the designated attester verifies clinical delivery and submits an attestation hash (`attest_care`).
 5. **Autonomous Settlement**: Once care is attested and the dispute window elapses, settlement (`settle`) is callable deterministically by anyone, transferring reimbursement directly to the provider wallet and refunding any escrow surplus to the sponsor.
@@ -134,7 +134,7 @@ CareFund documents all claims using a transparent evidence taxonomy in [evidence
 | Continuous Integration | VERIFIED | GitHub Actions workflows passing (Contracts, API, Web including SDK tests, Docs) |
 | Dispute Window Overflow Fix | VERIFIED LIVE | Fix deployed to Testnet in Block 3B (`care_agreement` WASM hash `b543e9a7...`) |
 | Escrow Conservation & Surplus Refund | VERIFIED LIVE | Real token-conservation accounting verified on Testnet down to stroop precision |
-| Browser Wallet Testnet Sign-off | AWAITING INTERACTION | Automated CLI execution verified on Testnet; live browser Freighter extension signing awaits maintainer interaction |
+| Browser Wallet Testnet Sign-off | VERIFIED | Live browser Freighter extension signing verified on Testnet (Agreement #8 complete lifecycle & signature rejection) |
 | External Security Audit | KNOWN LIMITATION | No independent third-party smart contract audit performed |
 
 ### Testnet Contract Instances (Block 3B)

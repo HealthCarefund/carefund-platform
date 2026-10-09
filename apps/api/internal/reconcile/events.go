@@ -2,6 +2,7 @@ package reconcile
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -15,7 +16,7 @@ const eventCursorKey = "contract_events_last_ledger"
 
 // reconcileEvents fetches new contract events for the provider-registry and
 // care-agreement contracts since the last processed ledger and mirrors
-// them into contract_events (idempotent — ON CONFLICT DO NOTHING on
+// them into contract_events (idempotent - ON CONFLICT DO NOTHING on
 // (contract_id, tx_hash, event_index), so overlapping ranges across
 // restarts or retries never create duplicates).
 func (r *Runner) reconcileEvents(ctx context.Context) {
@@ -43,11 +44,15 @@ func (r *Runner) reconcileEvents(ctx context.Context) {
 		return
 	}
 
+	allSuccessful := true
 	for _, event := range resp.Events {
-		r.storeEvent(ctx, event)
+		if err := r.storeEvent(ctx, event); err != nil {
+			allSuccessful = false
+			r.logger.Error("reconcile: storing event failed", "eventId", event.ID, "error", err)
+		}
 	}
 
-	if resp.LatestLedger > 0 {
+	if allSuccessful && resp.LatestLedger > 0 {
 		next := resp.LatestLedger + 1
 		if err := r.store.SetReconciliationCursor(ctx, eventCursorKey, strconv.FormatUint(uint64(next), 10)); err != nil {
 			r.logger.Error("reconcile: persisting event cursor failed", "error", err)
@@ -55,8 +60,8 @@ func (r *Runner) reconcileEvents(ctx context.Context) {
 	}
 }
 
-// eventStartLedger returns the persisted cursor, or — on first run, or if
-// the persisted cursor has fallen outside RPC's retention window — the
+// eventStartLedger returns the persisted cursor, or - on first run, or if
+// the persisted cursor has fallen outside RPC's retention window - the
 // oldest ledger RPC currently retains, so reconciliation always has a
 // valid starting point rather than looping on an error forever.
 func (r *Runner) eventStartLedger(ctx context.Context) (uint32, error) {
@@ -78,11 +83,11 @@ func (r *Runner) eventStartLedger(ctx context.Context) (uint32, error) {
 	return oldest, nil
 }
 
-func (r *Runner) storeEvent(ctx context.Context, event protocol.EventInfo) {
+func (r *Runner) storeEvent(ctx context.Context, event protocol.EventInfo) error {
 	eventIndex, ok := parseEventIndex(event.ID)
 	if !ok {
 		r.logger.Warn("reconcile: could not parse event index, skipping", "eventId", event.ID)
-		return
+		return nil
 	}
 
 	var agreementID *int64
@@ -90,21 +95,57 @@ func (r *Runner) storeEvent(ctx context.Context, event protocol.EventInfo) {
 		agreementID = &id
 	}
 
+	evType := eventType(event)
+	if event.ContractID == r.providerRegistryContractID {
+		if addr, ok := addressFromEventValue(event.ValueXDR); ok {
+			switch evType {
+			case "prov_reg", "prov_sus", "prov_rei", "prov_rev":
+				if err := r.reconcileProvider(ctx, addr); err != nil {
+					return fmt.Errorf("reconciling provider %s: %w", addr, err)
+				}
+			case "att_reg", "att_sus", "att_rei", "att_rev":
+				if err := r.reconcileAttester(ctx, addr); err != nil {
+					return fmt.Errorf("reconciling attester %s: %w", addr, err)
+				}
+			}
+		}
+	} else if agreementID != nil {
+		if err := r.reconcileAgreement(ctx, *agreementID); err != nil {
+			return fmt.Errorf("reconciling agreement %d: %w", *agreementID, err)
+		}
+	}
+
 	inserted, err := r.store.InsertContractEvent(ctx, store.ContractEvent{
 		ContractID:  event.ContractID,
 		TxHash:      event.TransactionHash,
 		EventIndex:  eventIndex,
-		EventType:   eventType(event),
+		EventType:   evType,
 		AgreementID: agreementID,
 		Ledger:      int64(event.Ledger),
 	})
 	if err != nil {
-		r.logger.Error("reconcile: inserting contract event failed", "eventId", event.ID, "error", err)
-		return
+		return fmt.Errorf("inserting contract event: %w", err)
 	}
 	if inserted {
-		r.logger.Info("reconcile: observed contract event", "eventId", event.ID, "type", eventType(event), "ledger", event.Ledger)
+		r.logger.Info("reconcile: observed contract event", "eventId", event.ID, "type", evType, "ledger", event.Ledger)
 	}
+	return nil
+}
+
+// addressFromEventValue best-effort decodes the event's value as an Address string.
+func addressFromEventValue(valueXDR string) (string, bool) {
+	if valueXDR == "" {
+		return "", false
+	}
+	var val xdr.ScVal
+	if err := xdr.SafeUnmarshalBase64(valueXDR, &val); err != nil || val.Address == nil {
+		return "", false
+	}
+	addr, err := val.Address.String()
+	if err != nil {
+		return "", false
+	}
+	return addr, true
 }
 
 // parseEventIndex extracts a stable integer event index from Soroban's own
@@ -138,7 +179,7 @@ func eventType(event protocol.EventInfo) string {
 }
 
 // agreementIDFromEventValue best-effort decodes the event's value as a u64
-// agreement id — true for every care-agreement event (they all publish the
+// agreement id - true for every care-agreement event (they all publish the
 // agreement_id as the event data), false for provider-registry events
 // (which publish an Address instead).
 func agreementIDFromEventValue(valueXDR string) (int64, bool) {

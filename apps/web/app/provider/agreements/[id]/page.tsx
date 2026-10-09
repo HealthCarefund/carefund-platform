@@ -58,7 +58,7 @@ export default function ProviderAgreementDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, state.phase]);
 
   async function submitOperation(operation: "cancel" | "settle" | "open_dispute") {
     reset();
@@ -90,12 +90,13 @@ export default function ProviderAgreementDetailPage() {
   }
 
   const { agreement } = load;
-  const isMine = walletStatus === "connected" && address === agreement.providerWallet;
+  const isConnected = walletStatus === "connected" && !!address;
+  const isMine = isConnected && address === agreement.providerWallet;
   const careDeadline = Number(agreement.careDeadline);
   const disputeWindowEnd = careDeadline + Number(agreement.disputeWindowSecs);
   const inActionableState = state.phase === "idle" || state.phase === "confirmed" || state.phase === "failed" || state.phase === "timeout";
 
-  const canSettle = isMine && agreement.state === "CareConfirmed" && nowSecs() > disputeWindowEnd;
+  const canSettle = isConnected && agreement.state === "CareConfirmed" && nowSecs() > disputeWindowEnd;
   const canDispute =
     isMine &&
     (agreement.state === "Funded" || agreement.state === "CareConfirmed") &&
@@ -120,7 +121,7 @@ export default function ProviderAgreementDetailPage() {
         ))}
       </dl>
 
-      {isMine && (
+      {(isMine || canSettle) && (
         <div className="mt-8 flex flex-wrap gap-3">
           {agreement.state === "Funded" && (
             <Link

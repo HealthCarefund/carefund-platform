@@ -1,13 +1,17 @@
 package api
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
 
+	"github.com/stellar/go-stellar-sdk/xdr"
+
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/httpx"
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/sorobanenc"
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/store"
 )
 
@@ -56,7 +60,7 @@ func toAttesterResponse(a store.Attester) attesterResponse {
 }
 
 // registerProviderRoutes also serves the public provider/attester
-// directory (GET /api/v1/providers, GET /api/v1/attesters) — not part of
+// directory (GET /api/v1/providers, GET /api/v1/attesters) - not part of
 // the original approved endpoint list, but needed for the Unit R admin
 // directory views (/admin/providers, /admin/attesters), which have no
 // other way to discover which wallets exist off a single known wallet.
@@ -120,7 +124,7 @@ func registerProviderRoutes(mux *http.ServeMux, deps Deps) {
 			return
 		}
 
-		provider, err := deps.Store.GetProviderByWallet(r.Context(), wallet)
+		provider, err := ensureProvider(r.Context(), deps, wallet)
 		if errors.Is(err, store.ErrNotFound) {
 			httpx.WriteNotFound(w, "provider not found")
 			return
@@ -142,7 +146,7 @@ func registerProviderRoutes(mux *http.ServeMux, deps Deps) {
 			return
 		}
 
-		if _, err := deps.Store.GetProviderByWallet(r.Context(), wallet); err != nil {
+		if _, err := ensureProvider(r.Context(), deps, wallet); err != nil {
 			if errors.Is(err, store.ErrNotFound) {
 				httpx.WriteNotFound(w, "provider not found")
 				return
@@ -163,6 +167,36 @@ func registerProviderRoutes(mux *http.ServeMux, deps Deps) {
 		}
 		writeJSON(w, http.StatusOK, response)
 	})
+}
+
+func ensureProvider(ctx context.Context, deps Deps, wallet string) (*store.Provider, error) {
+	provider, err := deps.Store.GetProviderByWallet(ctx, wallet)
+	if errors.Is(err, store.ErrNotFound) && deps.RPC != nil && deps.Config != nil {
+		if onChain, fetchErr := fetchOnChainProvider(ctx, deps, wallet); fetchErr == nil && onChain != nil {
+			_ = deps.Store.UpsertProvider(ctx, onChain.WalletAddress, onChain.ProviderRef, onChain.Status)
+			return onChain, nil
+		}
+	}
+	return provider, err
+}
+
+func fetchOnChainProvider(ctx context.Context, deps Deps, wallet string) (*store.Provider, error) {
+	if deps.Config.ProviderRegistryContractID == "" {
+		return nil, errors.New("provider registry contract ID not configured")
+	}
+	txBase64, err := sorobanenc.BuildGetProviderTransaction(deps.Config.ProviderRegistryContractID, wallet)
+	if err != nil {
+		return nil, err
+	}
+	sim, err := deps.RPC.Simulate(ctx, txBase64)
+	if err != nil || sim.Error != "" || len(sim.Results) == 0 || sim.Results[0].ReturnValueXDR == nil {
+		return nil, errors.New("simulation failed or returned empty result")
+	}
+	var retVal xdr.ScVal
+	if err := xdr.SafeUnmarshalBase64(*sim.Results[0].ReturnValueXDR, &retVal); err != nil {
+		return nil, err
+	}
+	return sorobanenc.DecodeProvider(retVal, wallet)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

@@ -31,8 +31,8 @@ These gates must be satisfied before final grant or project submission:
    - Complete multi-agreement lifecycle matrix verified on-chain (see `evidence/testnet-2026-10-09-block3b.md`).
 2. **Configuration and Evidence Synchronization** (COMPLETED in Block 3B):
    - Synchronized contract IDs, WASM hashes, and transaction proofs across `apps/web/.env.local`, `evidence/`, and documentation.
-3. **Live Browser Wallet Sign-off**:
-   - Verify transaction signing in a live browser using the Freighter extension on Testnet for create, fund, attest, and settle flows with maintainer interaction.
+3. **Live Browser Wallet Sign-off** (COMPLETED in Block 3B closeout):
+   - Verified transaction signing in a live browser using the Freighter extension on Testnet for Agreement #8 full lifecycle (creation, funding, attestation, outsider settlement) and signature rejection guard path.
 4. **Documentation Publication Verification**:
    - Verify that the static mdBook documentation site deploys cleanly via GitHub Pages to `https://healthcarefund.github.io/carefund-platform/` and all internal links resolve.
 5. **Release Readiness and Tagging**:

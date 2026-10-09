@@ -65,7 +65,7 @@ func main() {
 	})
 
 	reconciler := reconcile.New(dataStore, rpcClient, logger, cfg.ReconciliationInterval,
-		cfg.ProviderRegistryContractID, cfg.CareAgreementContractID)
+		cfg.ProviderRegistryContractID, cfg.CareAgreementContractID, cfg.SettlementAssetContractID)
 	reconcileCtx, stopReconcile := context.WithCancel(context.Background())
 	defer stopReconcile()
 	go reconciler.Run(reconcileCtx)

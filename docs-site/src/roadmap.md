@@ -23,8 +23,8 @@ Before submitting CareFund for formal ecosystem review or production considerati
    - Execute a complete creation, funding, attestation, and settlement lifecycle.
 2. **Configuration Synchronization**:
    - Update contract IDs and transaction hashes in `apps/web/.env.local`, `apps/api/.env`, `evidence/index.md`, and documentation.
-3. **Live Browser Wallet Sign-off**:
-   - Confirm transaction signing in a live browser with Freighter extension installed on Testnet.
+3. **Live Browser Wallet Sign-off** (COMPLETED in Block 3B closeout):
+   - Confirmed transaction signing in a live browser with Freighter extension on Testnet for Agreement #8 full lifecycle (funding, attestation, outsider settlement) and signature rejection guard path.
 4. **Documentation Publication Sign-off**:
    - Confirm GitHub Pages deployment is active and verified at `https://healthcarefund.github.io/carefund-platform/`.
 5. **Release Tagging**:
