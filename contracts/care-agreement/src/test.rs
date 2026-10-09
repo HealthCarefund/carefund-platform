@@ -1202,7 +1202,10 @@ fn test_expire_agreement_invalid_state_rejected() {
 
     // 1. Requested state before funding deadline rejected
     let res_before_fd = client.try_expire(&agreement_id);
-    assert_eq!(res_before_fd, Err(Ok(AgreementError::FundingDeadlineNotReached)));
+    assert_eq!(
+        res_before_fd,
+        Err(Ok(AgreementError::FundingDeadlineNotReached))
+    );
 
     // 2. Fund agreement and attest care -> CareConfirmed
     client.fund(&agreement_id, &sponsor);
@@ -5262,7 +5265,10 @@ fn test_red_b2_unauthorized_party_preempts_attested_settlement() {
 
     client.fund(&ag_id, &sponsor);
     client.attest_care(&ag_id, &attester, &BytesN::from_array(&env, &[5u8; 32]));
-    assert_eq!(client.get_agreement(&ag_id).state, AgreementState::CareConfirmed);
+    assert_eq!(
+        client.get_agreement(&ag_id).state,
+        AgreementState::CareConfirmed
+    );
 
     // Advance past care deadline
     env.ledger().with_mut(|l| {
@@ -5480,4 +5486,3 @@ fn test_red_b7_expire_rejects_unfunded_requested_agreement() {
     assert!(client.try_expire(&ag_id).is_ok());
     assert_eq!(client.get_agreement(&ag_id).state, AgreementState::Expired);
 }
-
