@@ -34,23 +34,26 @@ When an agreement is funded:
 
 ### 2. Disbursed Settlement (`settle`)
 When care is delivered and attested:
-1. The contract verifies that `state == AgreementState::CareConfirmed` and the ledger timestamp exceeds `care_deadline`.
-2. The contract verifies `sponsor.require_auth()`.
+1. The contract verifies that `state == AgreementState::CareConfirmed` and the ledger timestamp exceeds the care deadline plus dispute window (`now > care_deadline + dispute_window_secs`).
+2. Settle is permissionless: anyone can call it once the dispute window has elapsed, ensuring deterministic finalization without sponsor counterparty veto.
 3. The contract invokes `token::Client::new(&env, &settlement_asset).transfer(&contract_address, &provider, &settlement_amount)`.
-4. Settlement tokens arrive in the provider's wallet balance.
-5. If `funding_amount > settlement_amount`, the remaining balance is retained in the contract or handled according to protocol terms.
+4. The contract atomically refunds any surplus escrow (`funding_amount - settlement_amount`) to the sponsor via `token::Client::new(&env, &settlement_asset).transfer(&contract_address, &sponsor, &surplus)`.
+5. Agreement transitions to `Settled`, and the contract balance for this agreement drops to zero.
 
-### 3. Sponsor Refund (`refund` / `expire`)
-If care is not delivered before deadlines or an admin resolves a dispute in favor of refund:
-1. The contract verifies that conditions permit refund (e.g., `care_deadline` passed with no attestation).
-2. The contract transfers the full deposited `funding_amount` back to the `sponsor`.
-3. The agreement state is marked terminal (`Refunded` or `Expired`).
+### 3. Expiration and Refunds (`expire` / `resolve_dispute`)
+If care is not delivered or an admin resolves a dispute:
+1. **Unfunded Expiration**: If an agreement remains in `Requested` past `funding_deadline`, anyone can call `expire`. State transitions to `Expired` with zero token transfers.
+2. **Funded Expiration**: If an agreement is `Funded` and the ledger timestamp exceeds `care_deadline + dispute_window_secs` without attestation, anyone can call `expire`. The contract transfers the full deposited `funding_amount` back to the `sponsor`, transitioning state to `Expired`.
+3. **Dispute Settle**: If an admin resolves a dispute with `DisputeResolution::Settle`, `settlement_amount` transfers to `provider`, surplus (`funding_amount - settlement_amount`) refunds to `sponsor`, and state transitions to `Settled`.
+4. **Dispute Refund**: If an admin resolves a dispute with `DisputeResolution::Refund`, the full `funding_amount` transfers back to `sponsor`, and state transitions to `Refunded`.
 
 ---
 
 ## Balance Invariants
 
 CareFund guarantees strict custody invariants:
-- **Zero Custodial Discretion**: Contracts hold tokens purely as a deterministic escrow. There is no admin "sweep" or general withdrawal function.
-- **Atomic Execution**: Every state transition and accompanying asset transfer executes in a single atomic transaction. If a transfer fails (e.g., insufficient sponsor balance), the state mutation reverts entirely.
+- **Full Escrow Conservation**: For every settled or refunded agreement, the sum of provider disbursement and sponsor refund exactly equals the initial deposit ($\Delta \text{Provider} + \Delta \text{Sponsor} = 0$). No surplus tokens remain stranded in contract custody.
+- **Zero Custodial Discretion**: Contracts hold tokens purely as deterministic escrow. There is no admin sweep or arbitrary withdrawal mechanism.
+- **Dispute Window Integrity**: Settlement is locked while the dispute window remains active, preventing race conditions against dispute filings.
+- **Atomic Execution**: Every state transition and accompanying asset transfer executes in a single atomic transaction. If a transfer fails, the entire transaction reverts.
 - **Traceability**: All transfers generate standard SAC `transfer` events, queryable via Horizon and Soroban RPC.

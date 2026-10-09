@@ -37,7 +37,7 @@ CareFund replaces plaintext clinical records with **cryptographic commitments**:
 
 Soroban smart contracts enforce role-based access control using `Address::require_auth()`:
 - `admin.require_auth()`: Restricts provider onboarding, suspension, revocation, and dispute resolution.
-- `sponsor.require_auth()`: Enforces that only the designated funder can deposit escrow or initiate settlement.
+- `sponsor.require_auth()`: Enforces that only the designated funder can deposit escrow into the contract.
 - `attester.require_auth()`: Enforces that care confirmation can only be signed by the designated attester.
 - `provider.require_auth()`: Restricts un-funded agreement cancellations.
 

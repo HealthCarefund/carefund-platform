@@ -124,11 +124,11 @@ pub struct Agreement {
 | `get_agreement` | `agreement_id: u64` | Read-only | Fetches complete agreement record |
 | `fund` | `agreement_id: u64, sponsor: Address` | Sponsor | Transfers funding amount into contract escrow |
 | `cancel` | `agreement_id: u64, provider: Address` | Provider | Cancels an un-funded agreement |
-| `expire` | `agreement_id: u64` | Anyone | Expires agreement if deadlines passed |
+| `expire` | `agreement_id: u64` | Anyone (Permissionless) | Expires Requested (past funding deadline) or Funded (past care deadline plus dispute window, refunding sponsor) |
 | `attest_care` | `agreement_id: u64, attester: Address, attestation_commitment: BytesN<32>` | Attester | Submits verified care delivery hash |
 | `open_dispute` | `agreement_id: u64, caller: Address` | Sponsor or Provider | Opens dispute during dispute window |
-| `settle` | `agreement_id: u64, sponsor: Address` | Sponsor | Releases settlement tokens to provider |
-| `resolve_dispute` | `agreement_id: u64, admin: Address, resolution: DisputeResolution` | Admin | Adjudicates dispute (Resume, Settle, Refund) |
+| `settle` | `agreement_id: u64` | Anyone (Permissionless) | Disburses settlement amount to provider and refunds surplus to sponsor after dispute window |
+| `resolve_dispute` | `agreement_id: u64, resolution: DisputeResolution` | Admin | Adjudicates dispute (Resume, Settle with surplus refund, Refund) |
 
 ### Errors (`AgreementError`)
 

@@ -66,7 +66,7 @@ apps/
 2. **Agreement Proposal**: A provider or sponsor initializes a care agreement (`create_agreement`) specifying token amounts, deadlines, and cryptographic commitment hashes.
 3. **Escrow Deposit**: The sponsor deposits funds (`fund`) into the `care-agreement` contract via the Stellar Asset Contract (SAC).
 4. **Care Attestation**: Upon procedure completion, the designated attester verifies clinical delivery and submits an attestation hash (`attest_care`).
-5. **Autonomous Settlement**: Once care is attested and the care deadline passes, the sponsor triggers settlement (`settle`), transferring reimbursement directly to the provider wallet.
+5. **Autonomous Settlement**: Once care is attested and the dispute window elapses, settlement (`settle`) is callable deterministically by anyone, transferring reimbursement directly to the provider wallet and refunding any escrow surplus to the sponsor.
 6. **Disputes and Safeguards**: If disagreements arise, either party can open a dispute (`open_dispute`) during the defined dispute window for administrative resolution (`resolve_dispute`).
 
 ## Local Quickstart
@@ -133,11 +133,12 @@ CareFund documents all claims using a transparent evidence taxonomy in [evidence
 | Database Restart Recovery | TESTED LOCALLY | Idempotency and reconciliation cursors survive service recreation |
 | Continuous Integration | VERIFIED | Real GitHub Actions workflow passing on ubuntu-latest |
 | Dispute Window Overflow Fix | TESTED LOCALLY | Fix in commit `7fdcade` unit tested; contract redeployment pending |
+| Escrow Conservation & Surplus Refund | TESTED LOCALLY | Invariant verified in 114 Rust contract tests, SDK, and Go API |
 | Browser Wallet Testnet Sign-off | UNVERIFIED | Historical Testnet actions used CLI; live browser signing pending |
 | External Security Audit | KNOWN LIMITATION | No independent third-party smart contract audit performed |
 
 ### Pre-Submission Redeployment Gate
-The deployed `care-agreement` contract on Testnet (`CD6NC44TOSO2G4RCVHULJUUHI4A52MCAYVAPNKQOLQSATWEK3DRDU2BS`) precedes the dispute-window overflow safety fix (commit `7fdcade`). Redeploying the updated WASM, verifying a fresh Testnet lifecycle, and synchronizing addresses across configuration files is an explicit pre-submission gate.
+The deployed `care-agreement` contract on Testnet (`CD6NC44TOSO2G4RCVHULJUUHI4A52MCAYVAPNKQOLQSATWEK3DRDU2BS`) precedes the dispute-window overflow safety fix (commit `7fdcade`) and the Block 3A financial safety remediation (commit `efd63d8`). Redeploying the updated WASM, verifying a fresh Testnet lifecycle, and synchronizing addresses across configuration files is an explicit pre-submission gate.
 
 ## Security Model and Limitations
 

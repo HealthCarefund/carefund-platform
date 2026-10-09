@@ -13,8 +13,8 @@ When a sponsor creates an agreement intent via `/sponsor/agreements/new`, an off
 ## 3. Browser Wallet Live Verification Pending
 While `@carefund/sdk` implements full Freighter wallet connection and signing logic, the historical Testnet evidence was generated using the Stellar CLI and local key identities. Signing the complete four-step lifecycle in a live browser session with the Freighter extension installed remains an unverified pre-submission gate.
 
-## 4. Deployed Contract Lacks Dispute Window Fix
-Commit `7fdcade` introduced an arithmetic overflow guard in `contracts/care-agreement/src/lib.rs` preventing invalid combinations of `care_deadline` and `dispute_window_secs`. The unit test suite verifies this fix. However, the historical Testnet deployment (`CD6NC44TOSO2G4RCVHULJUUHI4A52MCAYVAPNKQOLQSATWEK3DRDU2BS`) was created before this commit was compiled. Rebuilding and redeploying the WASM to Testnet is a mandatory pre-submission gate.
+## 4. Deployed Testnet Contract Precedes Financial Safety Remediation
+The historical Testnet deployment (`CD6NC44TOSO2G4RCVHULJUUHI4A52MCAYVAPNKQOLQSATWEK3DRDU2BS`) was compiled during Block 1 on 2026-09-27. It precedes the dispute window overflow guard (commit `7fdcade`) and the Block 3A financial safety remediation (commit `efd63d8`), which implemented full escrow conservation, surplus refunds, dispute window non-overlap, and permissionless settlement. While these invariant corrections are fully implemented, compiled into WASM, and verified locally by 114 passing unit and regression tests, redeployment to Testnet is reserved for a future deployment phase per protocol testing constraints.
 
 ## 5. API Authentication and Rate Limiting
 The Go API does not require bearer tokens or API keys. While it inspects payload addresses against expected roles before building unsigned transactions, this is a convenience validation. The final security barrier is the on-chain contract signature check. The API also lacks per-IP or per-wallet rate limiting.
