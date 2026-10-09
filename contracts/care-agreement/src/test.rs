@@ -4951,3 +4951,365 @@ fn test_security_nonexistent_agreement_operations_rejected() {
         Err(Ok(AgreementError::AgreementNotFound))
     );
 }
+
+// ---------------------------------------------------------------------------
+// Block 3A Red Regression Tests (Reproducing Financial Defects B1-B7)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_red_b1_expire_locks_deposited_escrow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+
+    let sponsor = Address::generate(&env);
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (1000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    let get_balance = |addr: &Address| -> i128 {
+        env.invoke_contract(
+            &token_contract_id,
+            &soroban_sdk::Symbol::new(&env, "balance"),
+            soroban_sdk::Vec::from_array(&env, [addr.clone().into_val(&env)]),
+        )
+    };
+
+    let patient_ref = BytesN::from_array(&env, &[3u8; 32]);
+    let service_commitment = BytesN::from_array(&env, &[4u8; 32]);
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 1000;
+    let care_deadline = funding_deadline + 1000;
+    let dispute_window_secs = 500u64;
+
+    let ag_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &patient_ref,
+        &service_commitment,
+        &1000_0000000i128,
+        &800_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &dispute_window_secs,
+    );
+
+    client.fund(&ag_id, &sponsor);
+    assert_eq!(get_balance(&client.address), 1000_0000000i128);
+    assert_eq!(get_balance(&sponsor), 0i128);
+
+    // Advance past care deadline and dispute window without attestation
+    env.ledger().with_mut(|l| {
+        l.timestamp = care_deadline + dispute_window_secs + 1;
+    });
+
+    client.expire(&ag_id);
+    assert_eq!(client.get_agreement(&ag_id).state, AgreementState::Expired);
+
+    // Defect B1: Under old code, expire does NOT refund sponsor. Funds remain trapped in contract!
+    // This assertion fails under old code:
+    assert_eq!(get_balance(&sponsor), 1000_0000000i128);
+    assert_eq!(get_balance(&client.address), 0i128);
+}
+
+#[test]
+fn test_red_b2_unauthorized_party_preempts_attested_settlement() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+    let sponsor = Address::generate(&env);
+
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (1000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 1000;
+    let care_deadline = funding_deadline + 1000;
+    let dispute_window_secs = 500u64;
+
+    let ag_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &BytesN::from_array(&env, &[4u8; 32]),
+        &1000_0000000i128,
+        &800_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &dispute_window_secs,
+    );
+
+    client.fund(&ag_id, &sponsor);
+    client.attest_care(&ag_id, &attester, &BytesN::from_array(&env, &[5u8; 32]));
+    assert_eq!(client.get_agreement(&ag_id).state, AgreementState::CareConfirmed);
+
+    // Advance past care deadline
+    env.ledger().with_mut(|l| {
+        l.timestamp = care_deadline + 1;
+    });
+
+    // Defect B2: Under old code, expire accepts CareConfirmed and transitions to Expired,
+    // permanently destroying provider's ability to settle!
+    // Correct behavior: expire on CareConfirmed must be rejected (InvalidState).
+    // This assertion fails under old code (it returns Ok(Ok(()))):
+    assert_eq!(
+        client.try_expire(&ag_id),
+        Err(Ok(AgreementError::InvalidState))
+    );
+}
+
+#[test]
+fn test_red_b3_surplus_retained_in_contract_after_settlement() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+    let sponsor = Address::generate(&env);
+
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (1000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    let get_balance = |addr: &Address| -> i128 {
+        env.invoke_contract(
+            &token_contract_id,
+            &soroban_sdk::Symbol::new(&env, "balance"),
+            soroban_sdk::Vec::from_array(&env, [addr.clone().into_val(&env)]),
+        )
+    };
+
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 1000;
+    let care_deadline = funding_deadline + 1000;
+    let dispute_window_secs = 500u64;
+
+    let ag_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &BytesN::from_array(&env, &[4u8; 32]),
+        &1000_0000000i128, // Funding: 1000
+        &800_0000000i128,  // Settlement: 800 (Surplus = 200)
+        &funding_deadline,
+        &care_deadline,
+        &dispute_window_secs,
+    );
+
+    client.fund(&ag_id, &sponsor);
+    client.attest_care(&ag_id, &attester, &BytesN::from_array(&env, &[5u8; 32]));
+
+    env.ledger().with_mut(|l| {
+        l.timestamp = care_deadline + dispute_window_secs + 1;
+    });
+
+    client.settle(&ag_id, &sponsor);
+    assert_eq!(get_balance(&provider), 800_0000000i128);
+
+    // Defect B3: Under old code, surplus (200) is stranded in contract. Sponsor gets 0.
+    // Correct behavior: Sponsor receives surplus refund of 200, contract balance = 0.
+    // This assertion fails under old code:
+    assert_eq!(get_balance(&sponsor), 200_0000000i128);
+    assert_eq!(get_balance(&client.address), 0i128);
+}
+
+#[test]
+fn test_red_b4_settlement_races_and_abbreviates_dispute_window() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+    let sponsor = Address::generate(&env);
+
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (1000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 1000;
+    let care_deadline = funding_deadline + 1000;
+    let dispute_window_secs = 500u64;
+
+    let ag_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &BytesN::from_array(&env, &[4u8; 32]),
+        &1000_0000000i128,
+        &800_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &dispute_window_secs,
+    );
+
+    client.fund(&ag_id, &sponsor);
+    client.attest_care(&ag_id, &attester, &BytesN::from_array(&env, &[5u8; 32]));
+
+    // Advance to 1 second after care deadline (dispute window is active until care_deadline + 500)
+    env.ledger().with_mut(|l| {
+        l.timestamp = care_deadline + 1;
+    });
+
+    // Defect B4: Under old code, settle succeeds here, terminating agreement and killing dispute window!
+    // Correct behavior: settlement must be rejected while dispute window is active.
+    // This assertion fails under old code (it returns Ok(Ok(()))):
+    assert_eq!(
+        client.try_settle(&ag_id, &sponsor),
+        Err(Ok(AgreementError::DisputeWindowActive))
+    );
+}
+
+#[test]
+fn test_red_b7_expire_rejects_unfunded_requested_agreement() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[1u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[2u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+    let sponsor = Address::generate(&env);
+
+    let (client, admin) = create_client(&env);
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 1000;
+    let care_deadline = funding_deadline + 1000;
+
+    let ag_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &BytesN::from_array(&env, &[4u8; 32]),
+        &1000_0000000i128,
+        &800_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &500u64,
+    );
+
+    // Advance past funding deadline without funding
+    env.ledger().with_mut(|l| {
+        l.timestamp = funding_deadline + 1;
+    });
+
+    // Defect B7: Under old code, expire returns Err(Ok(AgreementError::InvalidState)) on Requested agreements!
+    // Correct behavior: Requested agreement past funding deadline should expire cleanly.
+    // This assertion fails under old code:
+    assert!(client.try_expire(&ag_id).is_ok());
+    assert_eq!(client.get_agreement(&ag_id).state, AgreementState::Expired);
+}
+
