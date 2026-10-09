@@ -32,7 +32,7 @@ func toAgreementsPageResponse(page store.AgreementPage) agreementsPageResponse {
 // single-agreement lookup); added here because without it those explicitly
 // required frontend routes cannot function. Same read-only, off-chain
 // mirror shape and pagination convention as every other listing endpoint
-// already built (attesters, events) — no new domain concept.
+// already built (attesters, events) - no new domain concept.
 func registerWalletAgreementRoutes(mux *http.ServeMux, deps Deps) {
 	mux.HandleFunc("GET /api/v1/providers/{wallet}/agreements", func(w http.ResponseWriter, r *http.Request) {
 		wallet := r.PathValue("wallet")
@@ -42,7 +42,7 @@ func registerWalletAgreementRoutes(mux *http.ServeMux, deps Deps) {
 			})
 			return
 		}
-		if _, err := deps.Store.GetProviderByWallet(r.Context(), wallet); err != nil {
+		if _, err := ensureProvider(r.Context(), deps, wallet); err != nil {
 			if errors.Is(err, store.ErrNotFound) {
 				httpx.WriteNotFound(w, "provider not found")
 				return
@@ -88,7 +88,7 @@ func registerWalletAgreementRoutes(mux *http.ServeMux, deps Deps) {
 
 		// Sponsors are not a registered/verified actor on-chain the way
 		// providers are (there is no sponsor registry to check membership
-		// against), so — unlike the provider listing above — there is no
+		// against), so - unlike the provider listing above - there is no
 		// existence check to perform first: any wallet may sponsor an
 		// agreement, and an empty result for a wallet that has never
 		// sponsored one is a perfectly valid answer, not a 404.

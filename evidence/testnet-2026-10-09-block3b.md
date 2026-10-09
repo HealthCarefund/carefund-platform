@@ -157,14 +157,55 @@ On-chain configuration readbacks:
 - Automatic Restoration: When interacting via `InvokeHostFunctionOp`, simulation detects archived entries and populates `restorePreamble`. The submission automatically restores archived state before function execution.
 - No permanent fund loss occurs simply because an entry becomes archived.
 
-## 8. Frontend and Wallet Integration Boundary (Gate E)
+## 8. Frontend and Wallet Integration Boundary (Gate E: VERIFIED)
 
 - Generated TypeScript contract bindings: zero diff in `packages/contracts/src/index.ts`.
 - SDK Test Suite: 80 unit and builder tests passing (`pnpm --filter @carefund/sdk run test`).
-- Web Unit Tests: 9 unit tests passing (`pnpm --filter @carefund/web run test`).
+- Web Unit Tests: 11 unit tests passing (`pnpm --filter @carefund/web run test`), including signature rejection without submission.
+- Web E2E Test Suite: 19 Playwright tests passing (`pnpm --filter @carefund/web run test:e2e`).
 - Web Next.js Server: Runs cleanly on port 3000.
-- Wallet Signing Boundary: Automated headless tests cannot simulate interactive Freighter extension popups without mocked private keys. In accordance with strict Block 3B non-fabrication rules, browser wallet interaction was not faked and is documented as awaiting maintainer interaction in a live browser.
+
+### 8.1 Signature Rejection Test (PASS)
+- Action: User initiated an operation requiring wallet authorization and rejected the transaction popup in the Freighter browser extension.
+- UI Status: **Failed**
+- Displayed Error Message: `Wallet declined to sign the transaction.`
+- Transaction Hash: None (no transaction hash generated or submitted).
+- Lifecycle Guard: The transaction flow remained strictly in the Failed state with zero progression to `submitting`, `submitted`, or `confirmed`, and no submission call was made to Soroban RPC.
+- Regression Test: Verified deterministically via unit test `apps/web/lib/transaction-rejection.test.ts`.
+
+### 8.2 Agreement #7 Reconciliation Defect, Root Cause, Remediation, and Replay
+- **Defect**: When Agreement #7 was created via Freighter wallet on Testnet (tx `a46300429dc1d091a8e722e4b143129121c846a0c8b39dbf4b6ee4411ec1a264` at ledger 5106190), background event reconciliation failed with PostgreSQL `SQLSTATE 23503` (foreign key violation on `contract_events_agreement_id_fkey` referencing `care_agreements(agreement_id)`). The reconciler logged the error and swallowed it, advancing the ledger cursor past ledger 5106190 without indexing Agreement #7. Furthermore, the `providers` table was empty because provider registry events were not fetching and storing provider records, causing `/api/v1/providers/{wallet}/agreements` to return 404.
+- **Root Cause**: The background reconciler operated event-first rather than entity-first; it assumed rows in `care_agreements` were already seeded locally before events were ingested. In addition, no decoders existed in Go to fetch and decode full on-chain contract storage objects via simulation, and batch cursor advancement did not verify that all events and entities in the batch were ingested successfully.
+- **Remediation**:
+  1. *Contract Entity Decoders*: Implemented `sorobanenc.DecodeAgreement`, `sorobanenc.DecodeProvider`, and `sorobanenc.DecodeAttester` to unmarshal simulated contract state from Soroban RPC into local database models.
+  2. *Entity-First Reconciler*: Modified `storeEvent` in `apps/api/internal/reconcile/events.go` to fetch and upsert referenced entities (`care_agreements`, `providers`, `attesters`) before inserting contract events.
+  3. *Cursor Protection*: Added an `allSuccessful` check to prevent cursor advancement whenever any event or entity in a batch fails to ingest.
+  4. *On-Demand API Fallback*: Added `ensureProvider` and `fetchOnChainAgreement` to REST endpoints to query and mirror on-chain state if a database row is missing.
+- **Replay Evidence**: The reconciler replayed events starting at ledger 5106190 without manual SQL intervention. Agreement #7 was automatically ingested from Testnet into `care_agreements` in state `Requested`, its `agr_cre` event was inserted into `contract_events`, and all provider/agreement endpoints resolved cleanly with HTTP 200.
+
+### 8.3 Agreement #8 Full Browser Lifecycle Verification (PASS)
+Agreement #8 was executed entirely through the browser application with client-side Freighter wallet signing on Stellar Testnet:
+- **Agreement Creation**: Created via provider portal with Freighter signature.
+- **Sponsor Funding Transaction**:
+  - Hash: `d2197fb8d30103d126d0c71f7328c12732d57dd92d9156c2534c1417a7ee5e06`
+  - Ledger: `5106918`
+  - Escrow Transfer: 10,000,000 stroops (1 XLM) transferred to contract escrow.
+  - State: Transitioned to `Funded`.
+- **Attestation Transaction**:
+  - Hash: `019fc50fc867eb7e1b9a71b775f82cbcb4462b16f2369fa2d1409b4ae17619f3`
+  - Ledger: `5107027`
+  - Signed by attester wallet: clinical procedure completion attested.
+  - State: Transitioned to `CareConfirmed`.
+- **Permissionless Outsider Settlement Transaction**:
+  - Hash: `b74947224324d11710d21aac3c36b46684af6fe0a7810aa425f6a841968e73fa`
+  - Ledger: `5107119`
+  - Executed by third-party caller after dispute window elapsed.
+  - Asset Disbursement: 8,000,000 stroops disbursed to provider wallet; 2,000,000 stroops surplus refunded to sponsor wallet.
+  - Escrow Liability: Returned to 0 stroops.
+- **Final UI State**: **Settled**
+  - Next.js web application displays Agreement #8 in `Settled` state.
+  - Verified across database `care_agreements` and `contract_events`.
 
 ## 9. Summary Verdict
 
-All Block 3B verification gates (A, B, C, D, E, F, G) have been executed against genuine Stellar Testnet contracts with zero simulated transactions, verified on-chain asset transfers, and complete invariant enforcement.
+All Block 3B verification gates (A, B, C, D, E, F, G) have been executed against genuine Stellar Testnet contracts. All successful lifecycle actions were executed as real Testnet transactions with verified on-chain asset transfers and complete invariant enforcement, while nine negative paths were verified through live RPC simulation rejection. Interactive browser signing with the Freighter extension (Gate E) is fully verified and documented.

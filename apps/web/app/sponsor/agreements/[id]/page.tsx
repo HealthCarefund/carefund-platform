@@ -58,7 +58,7 @@ export default function SponsorAgreementDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, state.phase]);
 
   async function submit(operation: PrepareTransactionOperation) {
     reset();
@@ -90,13 +90,14 @@ export default function SponsorAgreementDetailPage() {
   }
 
   const { agreement } = load;
-  const isMine = walletStatus === "connected" && address === agreement.sponsorWallet;
+  const isConnected = walletStatus === "connected" && !!address;
+  const isMine = isConnected && address === agreement.sponsorWallet;
   const careDeadline = Number(agreement.careDeadline);
   const disputeWindowEnd = careDeadline + Number(agreement.disputeWindowSecs);
   const inActionableState = state.phase === "idle" || state.phase === "confirmed" || state.phase === "failed" || state.phase === "timeout";
 
   const canFund = isMine && agreement.state === "Requested";
-  const canSettle = isMine && agreement.state === "CareConfirmed" && nowSecs() > disputeWindowEnd;
+  const canSettle = isConnected && agreement.state === "CareConfirmed" && nowSecs() > disputeWindowEnd;
   const canDispute =
     isMine &&
     (agreement.state === "Funded" || agreement.state === "CareConfirmed") &&
@@ -121,7 +122,7 @@ export default function SponsorAgreementDetailPage() {
         ))}
       </dl>
 
-      {isMine && (
+      {(isMine || canSettle) && (
         <div className="mt-8 flex flex-wrap gap-3">
           {canFund && (
             <button

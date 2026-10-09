@@ -25,6 +25,7 @@ Current deployment implementing full escrow conservation, surplus refunds, stric
 | ID 3 | Funded expiry | Create: `9d92964a...`<br>Fund: `66df4920...`<br>Expire: `4d1b15c0...` | `Expired` | F = 20M stroops. Expired after dispute window without attestation. 100% of F refunded to sponsor; 0 to provider. Contract obligation = 0. |
 | ID 4 | Dispute & Admin Resolution (Refund) | Create: `943b5ad1...`<br>Fund: `0763fc28...`<br>Dispute: `cd290e0d...`<br>Resolve: `55bfa433...` | `Refunded` | F = 15M stroops. Dispute opened within window, resolved as Refund by admin. Full 15M stroops refunded to sponsor. Contract obligation = 0. |
 | ID 5 | Provider cancellation | Create: `ad72796c...`<br>Cancel: `7a19745e...` | `Cancelled` | Cancelled by provider before funding. Zero asset transfers. |
+| ID 8 | Full browser wallet lifecycle | Create: `5d462e16...`<br>Fund: `d2197fb8...`<br>Attest: `019fc50f...`<br>Settle: `b7494722...` | `Settled` | Executed via Freighter browser extension. F = 10M stroops (1 XLM). S = 8M stroops paid to provider; F - S = 2M stroops surplus refunded to sponsor. Contract escrow obligation = 0. |
 | ID 3 & 4 | Multi-agreement escrow pooling | N/A (simultaneous on-chain state) | Pooled | Simultaneously funded: contract held 35M stroops (20M + 15M). Finalizing ID 3 left exactly 15M stroops for ID 4. Zero cross-agreement leakage. |
 
 ---
@@ -44,6 +45,6 @@ This section preserves the original deployment and verification record from Bloc
 ## Crucial Qualifications and Outstanding Gates
 
 1. **WASM Redeployment Gate Resolved**: In Block 3B, the updated contracts were deployed and verified with the current financial safety invariants. The historical Block 1 contracts remain on Testnet as historical reference.
-2. **Signing Mechanism**: All lifecycle transactions above were submitted to the live Testnet ledger using authorized Stellar CLI operator identities. Browser extension signing with Freighter remains classified as awaiting maintainer interaction.
+2. **Browser Wallet Signing Verified (Gate E)**: Interactive browser extension signing with Freighter was verified live on Testnet through Agreement #8 (complete nominal lifecycle) and signature rejection handling without submission.
 3. **Network Boundary**: All evidence represents Stellar Testnet. Mainnet deployment has not occurred.
 

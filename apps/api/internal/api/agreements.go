@@ -1,13 +1,17 @@
 package api
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/stellar/go-stellar-sdk/xdr"
+
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/httpx"
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/sorobanenc"
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/store"
 )
 
@@ -89,6 +93,13 @@ func registerAgreementRoutes(mux *http.ServeMux, deps Deps) {
 		}
 
 		agreement, err := deps.Store.GetAgreement(r.Context(), id)
+		if errors.Is(err, store.ErrNotFound) && deps.RPC != nil && deps.Config != nil {
+			if onChain, fetchErr := fetchOnChainAgreement(r.Context(), deps, id); fetchErr == nil && onChain != nil {
+				_ = deps.Store.UpsertAgreement(r.Context(), *onChain)
+				agreement = onChain
+				err = nil
+			}
+		}
 		if errors.Is(err, store.ErrNotFound) {
 			httpx.WriteNotFound(w, "agreement not found")
 			return
@@ -108,12 +119,20 @@ func registerAgreementRoutes(mux *http.ServeMux, deps Deps) {
 		}
 
 		if _, err := deps.Store.GetAgreement(r.Context(), id); err != nil {
+			if errors.Is(err, store.ErrNotFound) && deps.RPC != nil && deps.Config != nil {
+				if onChain, fetchErr := fetchOnChainAgreement(r.Context(), deps, id); fetchErr == nil && onChain != nil {
+					_ = deps.Store.UpsertAgreement(r.Context(), *onChain)
+					err = nil
+				}
+			}
 			if errors.Is(err, store.ErrNotFound) {
 				httpx.WriteNotFound(w, "agreement not found")
 				return
 			}
-			httpx.WriteInternal(w, deps.Logger, err, "GetAgreement")
-			return
+			if err != nil {
+				httpx.WriteInternal(w, deps.Logger, err, "GetAgreement")
+				return
+			}
 		}
 
 		cursor, ok := parseEventsCursor(w, r.URL.Query().Get("cursor"))
@@ -182,4 +201,23 @@ func parseEventsLimit(w http.ResponseWriter, raw string) (int, bool) {
 		return 0, false
 	}
 	return limit, true
+}
+
+func fetchOnChainAgreement(ctx context.Context, deps Deps, agreementID int64) (*store.CareAgreement, error) {
+	if deps.Config.CareAgreementContractID == "" {
+		return nil, errors.New("care agreement contract ID not configured")
+	}
+	txBase64, err := sorobanenc.BuildGetAgreementTransaction(deps.Config.CareAgreementContractID, agreementID)
+	if err != nil {
+		return nil, err
+	}
+	sim, err := deps.RPC.Simulate(ctx, txBase64)
+	if err != nil || sim.Error != "" || len(sim.Results) == 0 || sim.Results[0].ReturnValueXDR == nil {
+		return nil, errors.New("simulation failed or returned empty result")
+	}
+	var retVal xdr.ScVal
+	if err := xdr.SafeUnmarshalBase64(*sim.Results[0].ReturnValueXDR, &retVal); err != nil {
+		return nil, err
+	}
+	return sorobanenc.DecodeAgreement(retVal, agreementID, deps.Config.SettlementAssetContractID)
 }
