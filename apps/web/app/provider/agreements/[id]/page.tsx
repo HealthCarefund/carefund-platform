@@ -26,6 +26,10 @@ const FIELD_LABELS: [keyof AgreementResponse, string][] = [
   ["disputeWindowSecs", "Dispute window (seconds)"],
 ];
 
+function nowSecs(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
 export default function ProviderAgreementDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { status: walletStatus, address, getSigner } = useWallet();
@@ -56,12 +60,12 @@ export default function ProviderAgreementDetailPage() {
     };
   }, [id]);
 
-  async function cancelAgreement() {
+  async function submitOperation(operation: "cancel" | "settle" | "open_dispute") {
     reset();
     await run(
       prepareViaBackend({
         agreementId: id,
-        operation: "cancel",
+        operation,
         sourcePublicKey: address!,
       }),
     );
@@ -87,6 +91,16 @@ export default function ProviderAgreementDetailPage() {
 
   const { agreement } = load;
   const isMine = walletStatus === "connected" && address === agreement.providerWallet;
+  const careDeadline = Number(agreement.careDeadline);
+  const disputeWindowEnd = careDeadline + Number(agreement.disputeWindowSecs);
+  const inActionableState = state.phase === "idle" || state.phase === "confirmed" || state.phase === "failed" || state.phase === "timeout";
+
+  const canSettle = isMine && agreement.state === "CareConfirmed" && nowSecs() > disputeWindowEnd;
+  const canDispute =
+    isMine &&
+    (agreement.state === "Funded" || agreement.state === "CareConfirmed") &&
+    nowSecs() > careDeadline &&
+    nowSecs() <= disputeWindowEnd;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
@@ -119,11 +133,31 @@ export default function ProviderAgreementDetailPage() {
           {agreement.state === "Requested" && (
             <button
               type="button"
-              onClick={cancelAgreement}
-              disabled={state.phase !== "idle" && state.phase !== "confirmed" && state.phase !== "failed" && state.phase !== "timeout"}
+              onClick={() => submitOperation("cancel")}
+              disabled={!inActionableState}
               className="focus-ring rounded-lg border border-danger-500 px-5 py-3 text-sm font-medium text-danger-500 transition-colors hover:bg-danger-500/10 disabled:opacity-50"
             >
               Cancel agreement
+            </button>
+          )}
+          {canSettle && (
+            <button
+              type="button"
+              onClick={() => submitOperation("settle")}
+              disabled={!inActionableState}
+              className="focus-ring rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
+            >
+              Settle agreement
+            </button>
+          )}
+          {canDispute && (
+            <button
+              type="button"
+              onClick={() => submitOperation("open_dispute")}
+              disabled={!inActionableState}
+              className="focus-ring rounded-lg border border-danger-500 px-5 py-3 text-sm font-medium text-danger-500 transition-colors hover:bg-danger-500/10 disabled:opacity-50"
+            >
+              Open dispute
             </button>
           )}
         </div>
