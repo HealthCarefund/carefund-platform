@@ -546,7 +546,7 @@ impl CareAgreementContract {
 
         match agreement.state {
             AgreementState::Requested => {
-                if current_time < agreement.funding_deadline {
+                if current_time <= agreement.funding_deadline {
                     return Err(AgreementError::FundingDeadlineNotReached);
                 }
                 agreement.state = AgreementState::Expired;
@@ -802,7 +802,10 @@ impl CareAgreementContract {
         );
 
         // 2. Refund surplus (funding_amount - settlement_amount) to sponsor if positive
-        let surplus = agreement.funding_amount - agreement.settlement_amount;
+        let surplus = agreement
+            .funding_amount
+            .checked_sub(agreement.settlement_amount)
+            .ok_or(AgreementError::ArithmeticOverflow)?;
         if surplus > 0 {
             env.invoke_contract::<()>(
                 &settlement_asset,
@@ -908,7 +911,10 @@ impl CareAgreementContract {
                         ],
                     ),
                 );
-                let surplus = agreement.funding_amount - agreement.settlement_amount;
+                let surplus = agreement
+                    .funding_amount
+                    .checked_sub(agreement.settlement_amount)
+                    .ok_or(AgreementError::ArithmeticOverflow)?;
                 if surplus > 0 {
                     env.invoke_contract::<()>(
                         &settlement_asset,

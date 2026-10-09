@@ -5486,3 +5486,299 @@ fn test_red_b7_expire_rejects_unfunded_requested_agreement() {
     assert!(client.try_expire(&ag_id).is_ok());
     assert_eq!(client.get_agreement(&ag_id).state, AgreementState::Expired);
 }
+
+#[test]
+fn test_funding_deadline_exact_boundary_cannot_expire_but_can_fund() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin) = create_client(&env);
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[10u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[11u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+    let sponsor = Address::generate(&env);
+
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (2000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
+
+    let get_balance = |addr: &Address| -> i128 {
+        env.invoke_contract(
+            &token_contract_id,
+            &soroban_sdk::Symbol::new(&env, "balance"),
+            soroban_sdk::Vec::from_array(&env, [addr.clone().into_val(&env)]),
+        )
+    };
+
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 1000;
+    let care_deadline = funding_deadline + 2000;
+
+    let ag_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &1000_0000000i128,
+        &750_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &600u64,
+    );
+
+    // Exact boundary timestamp: now == funding_deadline
+    env.ledger().with_mut(|l| {
+        l.timestamp = funding_deadline;
+    });
+
+    // Policy verification 1: At now == funding_deadline, expire MUST be rejected
+    let expire_res = client.try_expire(&ag_id);
+    assert_eq!(
+        expire_res,
+        Err(Ok(AgreementError::FundingDeadlineNotReached))
+    );
+    assert_eq!(
+        client.get_agreement(&ag_id).state,
+        AgreementState::Requested
+    );
+
+    // Policy verification 2: At now == funding_deadline, funding MUST still be permitted
+    let fund_res = client.try_fund(&ag_id, &sponsor);
+    assert!(fund_res.is_ok());
+    assert_eq!(client.get_agreement(&ag_id).state, AgreementState::Funded);
+    assert_eq!(get_balance(&client.address), 1000_0000000i128);
+}
+
+#[test]
+fn test_funding_deadline_past_boundary_cannot_fund_but_can_expire() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin) = create_client(&env);
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider = Address::generate(&env);
+    let provider_ref = BytesN::from_array(&env, &[10u8; 32]);
+    registry_client.register_provider(&provider, &provider_ref);
+
+    let attester = Address::generate(&env);
+    let credential_ref = BytesN::from_array(&env, &[11u8; 32]);
+    registry_client.register_attester(&attester, &provider, &credential_ref);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+    let sponsor = Address::generate(&env);
+
+    use soroban_sdk::IntoVal;
+    env.invoke_contract::<()>(
+        &token_contract_id,
+        &soroban_sdk::symbol_short!("mint"),
+        soroban_sdk::Vec::from_array(
+            &env,
+            [
+                sponsor.clone().into_val(&env),
+                (2000_0000000i128).into_val(&env),
+            ],
+        ),
+    );
+
+    let get_balance = |addr: &Address| -> i128 {
+        env.invoke_contract(
+            &token_contract_id,
+            &soroban_sdk::Symbol::new(&env, "balance"),
+            soroban_sdk::Vec::from_array(&env, [addr.clone().into_val(&env)]),
+        )
+    };
+
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    let current_time = env.ledger().timestamp();
+    let funding_deadline = current_time + 1000;
+    let care_deadline = funding_deadline + 2000;
+
+    let ag_id = client.create_agreement(
+        &provider,
+        &sponsor,
+        &attester,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &1000_0000000i128,
+        &750_0000000i128,
+        &funding_deadline,
+        &care_deadline,
+        &600u64,
+    );
+
+    // Past boundary timestamp: now == funding_deadline + 1
+    env.ledger().with_mut(|l| {
+        l.timestamp = funding_deadline + 1;
+    });
+
+    // Policy verification 1: At now == funding_deadline + 1, funding MUST be rejected
+    let fund_res = client.try_fund(&ag_id, &sponsor);
+    assert_eq!(fund_res, Err(Ok(AgreementError::FundingDeadlineNotPassed)));
+    assert_eq!(
+        client.get_agreement(&ag_id).state,
+        AgreementState::Requested
+    );
+
+    // Policy verification 2: At now == funding_deadline + 1, expire MUST succeed
+    let expire_res = client.try_expire(&ag_id);
+    assert!(expire_res.is_ok());
+    assert_eq!(client.get_agreement(&ag_id).state, AgreementState::Expired);
+    // Unfunded expiry transfers 0 tokens
+    assert_eq!(get_balance(&client.address), 0);
+    assert_eq!(get_balance(&sponsor), 2000_0000000i128);
+}
+
+#[test]
+fn test_per_agreement_conservation_vs_aggregate_contract_balance() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin) = create_client(&env);
+    let (registry_client, registry_admin) = create_registry_client(&env);
+    registry_client.initialize(&registry_admin);
+
+    let provider1 = Address::generate(&env);
+    let provider1_ref = BytesN::from_array(&env, &[12u8; 32]);
+    registry_client.register_provider(&provider1, &provider1_ref);
+
+    let attester1 = Address::generate(&env);
+    let credential1_ref = BytesN::from_array(&env, &[13u8; 32]);
+    registry_client.register_attester(&attester1, &provider1, &credential1_ref);
+
+    let provider2 = Address::generate(&env);
+    let provider2_ref = BytesN::from_array(&env, &[14u8; 32]);
+    registry_client.register_provider(&provider2, &provider2_ref);
+
+    let attester2 = Address::generate(&env);
+    let credential2_ref = BytesN::from_array(&env, &[15u8; 32]);
+    registry_client.register_attester(&attester2, &provider2, &credential2_ref);
+
+    let token_admin = Address::generate(&env);
+    let token_contract_id = env.register_stellar_asset_contract(token_admin);
+    let sponsor1 = Address::generate(&env);
+    let sponsor2 = Address::generate(&env);
+
+    use soroban_sdk::IntoVal;
+    let mint_token = |recipient: &Address, amount: i128| {
+        env.invoke_contract::<()>(
+            &token_contract_id,
+            &soroban_sdk::symbol_short!("mint"),
+            soroban_sdk::Vec::from_array(
+                &env,
+                [recipient.clone().into_val(&env), amount.into_val(&env)],
+            ),
+        );
+    };
+
+    let get_balance = |addr: &Address| -> i128 {
+        env.invoke_contract(
+            &token_contract_id,
+            &soroban_sdk::Symbol::new(&env, "balance"),
+            soroban_sdk::Vec::from_array(&env, [addr.clone().into_val(&env)]),
+        )
+    };
+
+    mint_token(&sponsor1, 1000_0000000i128);
+    mint_token(&sponsor2, 2000_0000000i128);
+
+    client.initialize(&admin, &registry_client.address, &token_contract_id);
+
+    let current_time = env.ledger().timestamp();
+    let fd = current_time + 1000;
+    let cd = fd + 2000;
+    let dw = 500u64;
+
+    // Agreement 1: F1 = 1000, S1 = 800 (surplus refund = 200)
+    let ag1 = client.create_agreement(
+        &provider1,
+        &sponsor1,
+        &attester1,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &1000_0000000i128,
+        &800_0000000i128,
+        &fd,
+        &cd,
+        &dw,
+    );
+
+    // Agreement 2: F2 = 2000, S2 = 1500 (surplus refund = 500)
+    let ag2 = client.create_agreement(
+        &provider2,
+        &sponsor2,
+        &attester2,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &BytesN::from_array(&env, &[4u8; 32]),
+        &2000_0000000i128,
+        &1500_0000000i128,
+        &fd,
+        &cd,
+        &dw,
+    );
+
+    client.fund(&ag1, &sponsor1);
+    client.fund(&ag2, &sponsor2);
+
+    // Aggregate contract balance holds sum of active escrows (1000 + 2000 = 3000)
+    assert_eq!(get_balance(&client.address), 3000_0000000i128);
+
+    // Attest care for both agreements before care deadline
+    client.attest_care(&ag1, &attester1, &BytesN::from_array(&env, &[5u8; 32]));
+    client.attest_care(&ag2, &attester2, &BytesN::from_array(&env, &[6u8; 32]));
+
+    // Advance time past dispute window
+    env.ledger().with_mut(|l| {
+        l.timestamp = cd + dw + 1;
+    });
+
+    // Settle Agreement 1
+    client.settle(&ag1);
+    assert_eq!(client.get_agreement(&ag1).state, AgreementState::Settled);
+
+    // Per-agreement verification for Agreement 1:
+    // Provider 1 received S1 = 800
+    assert_eq!(get_balance(&provider1), 800_0000000i128);
+    // Sponsor 1 received surplus refund F1 - S1 = 200
+    assert_eq!(get_balance(&sponsor1), 200_0000000i128);
+    // Agreement 1 net escrow liability is exactly 0.
+
+    // BUT aggregate contract balance is NOT zero: it still holds Agreement 2's escrow of 2000!
+    assert_eq!(get_balance(&client.address), 2000_0000000i128);
+
+    // Settle Agreement 2
+    client.settle(&ag2);
+    assert_eq!(client.get_agreement(&ag2).state, AgreementState::Settled);
+
+    // Per-agreement verification for Agreement 2:
+    assert_eq!(get_balance(&provider2), 1500_0000000i128);
+    assert_eq!(get_balance(&sponsor2), 500_0000000i128);
+
+    // Now that ALL agreements are terminal, the aggregate balance returns to zero
+    assert_eq!(get_balance(&client.address), 0);
+}
