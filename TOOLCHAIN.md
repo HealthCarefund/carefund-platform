@@ -10,7 +10,7 @@ to verify your local environment matches.
 | pnpm       | 12.5.1     | `package.json` (`packageManager`), via Corepack |
 | Rust       | 1.98.1     | `rust-toolchain.toml`                          |
 | PostgreSQL | 18.6       | `docker-compose.yml` (`postgres:18.6-bookworm`, isolated container `carefund-pg18`, host port 5439) |
-| Stellar CLI| 27.0.0     | Installed via `cargo install --locked stellar-cli --version 27.0.0`; verified by `scripts/check-toolchain.sh` |
+| Stellar CLI| 28.1.0 / 27.0.0 | Host uses 28.1.0 for Protocol 28/29 compatibility; CI builds with 27.0.0; verified by `scripts/check-toolchain.sh` |
 
 The host's system Go (1.25.1) and PostgreSQL 16 installation are left
 untouched; CareFund never depends on them.
