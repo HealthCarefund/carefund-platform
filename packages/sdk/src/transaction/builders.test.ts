@@ -194,18 +194,19 @@ describe("transaction builders", () => {
     expect(tx.source).toBe(caller);
   });
 
-  it("settleAgreementTransaction invokes settle authorized by sponsor", async () => {
+  it("settleAgreementTransaction invokes settle permissionlessly", async () => {
     const server = fakeAccountLookup();
+    const caller = SPONSOR;
     const tx = await settleAgreementTransaction(config, server, {
       agreementId: toAgreementId("7"),
-      sponsor: SPONSOR,
-      sourcePublicKey: SPONSOR,
+      sourcePublicKey: caller,
       timeoutSeconds: 30,
     });
 
     const { functionName, args } = invokedCall(tx);
     expect(functionName).toBe("settle");
-    expect(argsXdr(args)).toEqual(argsXdr(spec.funcArgsToScVals("settle", { agreement_id: 7n, sponsor: SPONSOR })));
+    expect(argsXdr(args)).toEqual(argsXdr(spec.funcArgsToScVals("settle", { agreement_id: 7n })));
+    expect(tx.source).toBe(caller);
   });
 
   it.each(["Resume", "Settle", "Refund"] as const)(
