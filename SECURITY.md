@@ -19,8 +19,7 @@ dependency; report issues in those projects to their own maintainers.
 
 ## Supported versions
 
-This project has not reached a tagged release. Security fixes are made
-against `main` only.
+Security fixes are developed against `main`. v0.1.0 is the first public release line.
 
 ## Wallet signing boundary
 
