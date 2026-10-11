@@ -55,4 +55,5 @@ This release represents an MVP verified on Stellar Testnet. It is not approved f
 - The Go API validates wallet roles for convenience but does not enforce bearer authentication or per-caller rate limiting. Cryptographic access control is enforced on-chain via contract `require_auth()`.
 - Accessibility testing is automated; dedicated manual screen-reader audits have not been completed.
 - Commitments are 32-byte cryptographic hashes; deterministic SHA-256 does not constitute legal anonymization, and no HIPAA or GDPR compliance is claimed.
+- Agreement records use persistent Soroban storage with proactive TTL extension. Inactive persistent entries that exceed their TTL become archived rather than deleted; Protocol 23+ simulation automatically populates restoration preambles within InvokeHostFunctionOp, and RestoreFootprintOp remains available as an operator fallback.
 - No external third-party security audit has been conducted.

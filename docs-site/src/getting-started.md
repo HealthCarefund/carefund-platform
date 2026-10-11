@@ -6,7 +6,7 @@ This guide explains how to set up, configure, and run the complete CareFund mono
 
 Before starting, confirm your development environment matches the pinned versions documented in `TOOLCHAIN.md`:
 
-- **Go**: 1.27.1
+- **Go**: 1.27.2
 - **Node.js**: 24.21.0
 - **pnpm**: 12.5.1
 - **Rust**: 1.98.1 with target `wasm32v1-none`

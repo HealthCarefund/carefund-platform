@@ -52,6 +52,6 @@ test.describe("Admin provider directory (mocked API)", () => {
       await route.fulfill({ status: 500, json: { kind: "internal_error", message: "internal error" } });
     });
     await page.goto("/admin/providers");
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "internal error" })).toBeVisible();
   });
 });

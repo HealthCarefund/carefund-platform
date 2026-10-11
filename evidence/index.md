@@ -31,8 +31,8 @@ and something outside this session's control prevents verification).
 | Wrong-network signing prevention | unit tested in `packages/sdk/src/config.ts`, not exercised against a second live network | 2026-10-09 | LOGICALLY COVERED |
 | Recovery and failure-injection scenarios | see `evidence/recovery-2026-09-27.md` and `evidence/testnet-2026-10-09-block3b.md` | 2026-10-09 | see files |
 | Rust dependency scan | `cargo audit`: 0 vulnerabilities, 1 unmaintained-crate warning (`paste` 1.0.15, transitive via soroban-sdk) | 2026-10-09 | VERIFIED |
-| Go dependency scan | `govulncheck ./...`: 0 critical vulnerabilities; 10 non-critical advisories in Go 1.27.1 stdlib / x:text | 2026-10-09 | VERIFIED |
-| Node dependency scan | `pnpm audit`: 0 critical vulnerabilities; 9 advisories (1 low, 4 mod, 4 high) in `next` < 16.3.8 | 2026-10-09 | VERIFIED |
+| Go dependency scan | `govulncheck ./...`: 0 critical vulnerabilities; 0 standard-library findings on Go 1.27.2; 1 non-critical in x:text | 2026-10-09 | VERIFIED |
+| Node dependency scan | `pnpm audit`: 0 critical vulnerabilities; updated to Next.js 16.3.8 (0 direct advisories in next; 2 transitive) | 2026-10-09 | VERIFIED |
 | Contract security fix: dispute window overflow | `contracts/care-agreement/src/lib.rs` create_agreement rejects overflowing care_deadline/dispute_window_secs combination; redeployed to Testnet in Block 3B | 2026-10-09 | VERIFIED |
 | CI actually passes on GitHub Actions | run `36360910262` on commit `5908905`, all three jobs (Contracts, API, Web) green, observed via `gh run watch` and `gh api .../check-runs`, not inferred from YAML | 2026-09-27 | VERIFIED |
 | Branch protection enabled on main | `gh api repos/HealthCarefund/carefund-platform/branches/main/protection`, read back fresh after configuring: required status checks (strict, the three real check names above), PR required, force push disabled, deletion disabled, admin bypass left available (not enforced) | 2026-09-27 | VERIFIED |

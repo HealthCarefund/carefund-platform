@@ -97,13 +97,17 @@ Fresh scans performed during Block 3C on 2026-10-09:
 - `cargo audit`: scanned 216 crate dependencies with 0 vulnerabilities
   found. 1 allowed unmaintained-crate advisory exists for `paste` 1.0.15
   (RUSTSEC-2024-0436), pulled in transitively by `soroban-sdk` macros.
-- `govulncheck` (Go): 0 critical vulnerabilities. 10 non-critical
-  vulnerabilities reported across the Go 1.27.1 standard library
-  (fixed in Go 1.27.2) and `golang.org/x/text` (GO-2026-6629).
-- `pnpm audit` and `pnpm audit --prod`: 0 critical vulnerabilities. 9
-  vulnerabilities (1 low, 4 moderate, 4 high; 8 in production dependencies)
-  reported for `next` versions prior to 16.3.8. The web application is
-  hosted locally during verification and is not exposed to public hosting.
+- `govulncheck` (Go): 0 critical vulnerabilities. Scanned on Go 1.27.2:
+  0 standard-library findings (resolving the 9 stdlib findings present in 1.27.1);
+  1 non-critical finding in transitive dependency `golang.org/x/text` (GO-2026-6629,
+  `precis.Profile.String` invoked indirectly by `pgxpool.New`, not reachable with
+  untrusted profile definitions in application code).
+- `pnpm audit` and `pnpm audit --prod`: 0 critical vulnerabilities. Updated
+  `next` and `eslint-config-next` to 16.3.8, resolving all 8 advisories in `next`.
+  2 high advisories remain in optional transitive packages: `source-map-js` (<1.2.2,
+  GHSA-68fv-2mgg-jv7q, event-loop denial of service on untrusted source maps not
+  ingested in application) and `sharp` (<0.35.5, GHSA-wq5f-xc86-pv6w, librsvg CVE
+  not reachable as CareFund does not use dynamic image optimization or SVG processing).
 
 These point-in-time scans reflect current upstream vulnerability advisories
 at audit time. Dependabot is active for automated dependency updates.
