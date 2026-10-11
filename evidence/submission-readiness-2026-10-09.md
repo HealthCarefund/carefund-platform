@@ -133,7 +133,7 @@ No Stellar Mainnet deployment is claimed or used.
 3. **Privacy Model**: The system records 32-byte cryptographic commitments rather than plaintext patient data. Deterministic SHA-256 alone does not provide legal anonymization, and CareFund does not claim HIPAA or GDPR compliance. Callers must construct privacy-safe commitments.
 4. **API Authentication and Rate Limiting**: The Go API does not enforce bearer tokens or rate limits; cryptographic access control is enforced on-chain by Soroban contracts.
 5. **Screen-Reader Audits**: Accessibility is validated via automated axe-core scans; dedicated manual screen-reader reviews have not been conducted.
-6. **Testnet Only**: CareFund is a pre-release prototype deployed to Stellar Testnet; it is not approved for production clinical operations.
+6. **Testnet Only**: CareFund is a Testnet prototype and is not approved for production clinical operations.
 7. **Storage Durability and Archival Restoration**: Agreement entries use persistent Soroban storage with proactive TTL extension. Inactive persistent entries that exceed their TTL become archived rather than deleted. Under current Soroban protocols (Protocol 23+), transaction simulation automatically populates restoration preambles within `InvokeHostFunctionOp` so that contract calls auto-restore archived state. Standalone `RestoreFootprintOp` transactions remain available as an operator fallback.
 
 ## 14. Evidence Mapping Matrix

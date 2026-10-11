@@ -5,7 +5,7 @@ All notable changes to the CareFund platform are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-10-11
 
 ### Overview
 CareFund 0.1.0 is an open-source prototype coordinating conditional healthcare funding on Stellar Testnet. It provides smart contract escrow, independent verification attestation, and deterministic on-chain settlement, backed by a Go API metadata mirror and a Next.js web application.
