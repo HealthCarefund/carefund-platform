@@ -5,7 +5,7 @@ to verify your local environment matches.
 
 | Tool       | Version    | Selected by                                   |
 |------------|------------|------------------------------------------------|
-| Go         | 1.27.1     | `go.work`, `apps/api/go.mod` (`go 1.27.1`)     |
+| Go         | 1.27.2     | `go.work`, `apps/api/go.mod` (`go 1.27.2`)     |
 | Node.js    | 24.21.0    | `.nvmrc`, `package.json` (`engines.node`)      |
 | pnpm       | 12.5.1     | `package.json` (`packageManager`), via Corepack |
 | Rust       | 1.98.1     | `rust-toolchain.toml`                          |

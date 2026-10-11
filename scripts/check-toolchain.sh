@@ -15,7 +15,7 @@ check() {
   fi
 }
 
-check "Go" "go1.27.1" "$(go version)"
+check "Go" "go1.27.2" "$(go version)"
 check "Node" "v24.21.0" "$(node --version)"
 check "pnpm" "12.5.1" "$(pnpm --version)"
 check "Rust" "1.98.1" "$(rustc --version)"

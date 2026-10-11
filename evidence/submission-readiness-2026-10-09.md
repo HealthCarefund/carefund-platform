@@ -70,27 +70,27 @@ WASM Hashes:
 ## 7. Browser Wallet Verification
 
 Agreement #8 was executed entirely through the browser application with client-side Freighter extension signing on Stellar Testnet:
-- **Agreement Proposal**: Initialized by provider `GBWPJKZC...`.
-- **Sponsor Funding**: Tx `d2197fb8d30103d126d0c71f7328c12732d57dd92d9156c2534c1417a7ee5e06` (Ledger 5106918).
-- **Care Attestation**: Tx `019fc50fc867eb7e1b9a71b775f82cbcb4462b16f2369fa2d1409b4ae17619f3` (Ledger 5107027).
-- **Permissionless Outsider Settlement**: Tx `b74947224324d11710d21aac3c36b46684af6fe0a7810aa425f6a841968e73fa` (Ledger 5107119), signed by outsider `GBN3S...` after dispute window elapsed.
-- **Final Agreement State**: Confirmed `Settled` on ledger with reimbursement transferred to provider and surplus refunded to sponsor.
+- **Agreement Proposal**: Initialized by registered provider `GBWPJKZC635B4NKCBWBDHE7Z7FTAAJNREF7XWC64OL3X3MJYQGUKI453`.
+- **Sponsor Funding**: Tx `d2197fb8d30103d126d0c71f7328c12732d57dd92d9156c2534c1417a7ee5e06` (Ledger 5106918), 10,000,000 stroops (1 XLM) deposited by sponsor `GDRS3XRDOIQ6ZOKKBWUZ3ZOXJE6XJIYWSPZCRLZSAHKRBL6JMOP3SYPH`.
+- **Care Attestation**: Tx `019fc50fc867eb7e1b9a71b775f82cbcb4462b16f2369fa2d1409b4ae17619f3` (Ledger 5107027), attested by `GB677TBBVXGLIFAYVLYZNTP4YHMHSL2OWHAQEUSVQDN4D2JYAWDCPFRT`.
+- **Permissionless Outsider Settlement**: Tx `b74947224324d11710d21aac3c36b46684af6fe0a7810aa425f6a841968e73fa` (Ledger 5107119), signed by outsider `GDBPGGUET2LIJEE3E7SB6GIUFSU4IW3OPDRAPCO56I6E63NH2H77CYSW` after dispute window elapsed. 8,000,000 stroops disbursed to provider; 2,000,000 stroops surplus refunded to sponsor.
+- **Final Agreement State**: Confirmed `Settled` on ledger and in the web interface with zero net contract liability.
 - **Signature Rejection Test**: When a user rejects a signing request in Freighter, the UI transitions to `Failed` with "Wallet declined to sign the transaction", no transaction hash is generated, and no RPC submission is attempted.
 
 ## 8. Financial Verification
 
 Core accounting invariants were verified both in unit suites and live on Testnet:
 - **Full Escrow Conservation**: Per-agreement escrow liability returns to exactly zero upon settlement or refund.
-- **Surplus Refund**: Agreement #1 on Testnet (tx `9ae6dc48...`) locked 10 XLM and settled 8.5 XLM, atomically refunding 1.5 XLM back to the sponsor.
-- **Funded Expiry Refund**: Agreement #3 on Testnet (tx `4d1b15c0...`) expired in Funded state without attestation, refunding 100% of deposited escrow (10 XLM) to the sponsor.
-- **Dispute Resolution**: Agreement #4 on Testnet (tx `55bfa433...`) was adjudicated by the administrator, executing a full escrow refund to the sponsor.
+- **Surplus Refund**: Agreement #1 on Testnet (tx `9ae6dc480e876a32a18e5b0d12ce5a3187010c01ce319d0ac1e035589845285c`) locked 50,000,000 stroops (5 XLM) and settled 30,000,000 stroops (3 XLM), atomically refunding 20,000,000 stroops (2 XLM) surplus back to the sponsor.
+- **Funded Expiry Refund**: Agreement #3 on Testnet (tx `4d1b15c0d88c09f08fbcb2f7999281f7071ed03267e2351a80accd7c72839056`) expired in Funded state without attestation, refunding 100% of deposited escrow (20,000,000 stroops / 2 XLM) to the sponsor.
+- **Dispute Resolution**: Agreement #4 on Testnet (tx `55bfa433069d4c44e4d40748531e339b0788449f165f250f395b6bff0ccf7972`) was adjudicated by the administrator, executing a full escrow refund of 15,000,000 stroops (1.5 XLM) to the sponsor.
 - **Pooled Escrow Isolation**: Concurrent deposits across Agreements #3 and #4 verified that distinct agreement escrows remain isolated and that operations on one agreement cannot affect balances of another.
 - **Permissionless Settlement**: Settlement parameters are immutable on-chain; any caller may execute settlement once the dispute window elapses, preventing counterparty settlement veto.
 
 ## 9. Reconciliation and Recovery Verification
 
 During Block 3B live browser verification, Agreement #7 exposed an ingestion defect:
-- **Incident**: An agreement creation event failed insertion due to a foreign key constraint referencing `care_agreements(agreement_id)` before the agreement row existed. The reconciler swallowed the error and advanced the ledger cursor.
+- **Incident**: An agreement creation event (tx `a46300429dc1d091a8e722e4b143129121c846a0c8b39dbf4b6ee4411ec1a264` at ledger 5106190) failed insertion due to a foreign key constraint referencing `care_agreements(agreement_id)` before the agreement row existed. The reconciler swallowed the error and advanced the ledger cursor.
 - **Remediation**:
   1. Implemented on-chain entity decoders (`DecodeAgreement`, `DecodeProvider`, `DecodeAttester`).
   2. Transitioned background reconciliation from event-first to entity-first processing.
@@ -102,8 +102,8 @@ During Block 3B live browser verification, Agreement #7 exposed an ingestion def
 
 Automated test suites pass across all layers:
 - **Rust Contracts**: 117 tests passing (90 care-agreement, 27 provider-registry).
-- **Go API**: 125 test functions passing, including race detection (`go test -race -p 1`).
-- **TypeScript Workspace**: 98 unit tests passing (80 SDK, 11 web, 7 fixtures).
+- **Go API**: 127 tests passing, including race detection (`go test -race -p 1`).
+- **TypeScript Workspace**: 130 tests passing (80 SDK, 11 web, 39 fixtures).
 - **Web E2E**: 19 Playwright tests passing, including axe-core WCAG 2.1 accessibility audits.
 - **Documentation**: mdBook build clean; lychee link check clean (508 OK, 0 errors).
 - **CI Workflows**: GitHub Actions workflows green on `main` for Contracts, API, Web, and Docs.
@@ -134,18 +134,30 @@ No Stellar Mainnet deployment is claimed or used.
 4. **API Authentication and Rate Limiting**: The Go API does not enforce bearer tokens or rate limits; cryptographic access control is enforced on-chain by Soroban contracts.
 5. **Screen-Reader Audits**: Accessibility is validated via automated axe-core scans; dedicated manual screen-reader reviews have not been conducted.
 6. **Testnet Only**: CareFund is a pre-release prototype deployed to Stellar Testnet; it is not approved for production clinical operations.
+7. **Storage Durability and Archival Restoration**: Agreement entries use persistent Soroban storage with proactive TTL extension. Inactive persistent entries that exceed their TTL become archived rather than deleted. Under current Soroban protocols (Protocol 23+), transaction simulation automatically populates restoration preambles within `InvokeHostFunctionOp` so that contract calls auto-restore archived state. Standalone `RestoreFootprintOp` transactions remain available as an operator fallback.
 
 ## 14. Evidence Mapping Matrix
 
 | Claim | Evidence Reference | Ledger / Hash |
 |---|---|---|
-| Provider Registry Deployment | `evidence/testnet-2026-10-09-block3b.md` Section 1 | `CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS` |
-| Care Agreement Deployment | `evidence/testnet-2026-10-09-block3b.md` Section 1 | `CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O` |
-| Settlement with Surplus Refund | `evidence/testnet-2026-10-09-block3b.md` Section 3 | Tx `9ae6dc480c558c4f03932fa5a7a7815cfc7a76059344445330364bbaf5a5a0d3` |
-| Funded Expiry Full Refund | `evidence/testnet-2026-10-09-block3b.md` Section 4 | Tx `4d1b15c0e181c009f400787e8346df8bc45bc493540203f16c116dff983e26bb` |
-| Dispute Adjudication Refund | `evidence/testnet-2026-10-09-block3b.md` Section 5 | Tx `55bfa43389da4b6d080182449fc61a4947ba949b28a2a5ef1f63cb5dfd5c90d5` |
-| Live Browser Lifecycle (Agr #8) | `evidence/testnet-2026-10-09-block3b.md` Section 8.3 | Tx `d2197fb8...`, `019fc50f...`, `b7494722...` |
-| Signature Rejection Guard | `apps/web/lib/transaction-rejection.test.ts` | Test suite passing; 0 submissions |
+| Provider Registry Deployment | `evidence/testnet-2026-10-09-block3b.md` Section 3 | `CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS` (Tx `03a34e0dd88f9df39a58a870395833e3b9006cac6fa6fb5996eb03f3cb9f7132`) |
+| Care Agreement Deployment | `evidence/testnet-2026-10-09-block3b.md` Section 3 | `CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O` (Tx `dbcfa8a6ad27b78a3a0631b6041b744ba68f90320371d1a628f50949c630d7da`) |
+| Native XLM Asset Contract | `evidence/testnet-2026-10-09-block3b.md` Section 3 | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
+| Provider Registration | `evidence/testnet-2026-10-09-block3b.md` Section 4 | Tx `43d89465d197462cb4d78fab8518a62b6fdbfbf46ce604a641c590efa0b96f35` |
+| Attester Registration | `evidence/testnet-2026-10-09-block3b.md` Section 4 | Tx `a5047fe2f1b97da98efce3dbf157b4db54085c350ab1a1d6c1dabfa8e3f2f5b8` |
+| Agreement #1 Creation | `evidence/testnet-2026-10-09-block3b.md` Section 5 Case 1 | Tx `ed1ea91bc887b7503324873eb07e8c85fff1d08b70faed0880d7ca33bef100c6` |
+| Agreement #1 Funding | `evidence/testnet-2026-10-09-block3b.md` Section 5 Case 1 | Tx `177621f1764c032306eb3171da836b3626e2be9bad9905a3eb5a42126163a988` (50,000,000 stroops / 5 XLM) |
+| Agreement #1 Attestation | `evidence/testnet-2026-10-09-block3b.md` Section 5 Case 1 | Tx `6b7128dcb83038887de3566e5ce2b5d4e3671b81c8a4254fcd28f95305efd17a` |
+| Agreement #1 Settlement with Surplus Refund | `evidence/testnet-2026-10-09-block3b.md` Section 5 Case 1 | Tx `9ae6dc480e876a32a18e5b0d12ce5a3187010c01ce319d0ac1e035589845285c` (Disbursed 30M stroops, refunded 20M stroops) |
+| Agreement #2 Requested Expiry (Unfunded) | `evidence/testnet-2026-10-09-block3b.md` Section 5 Case 2 | Tx `80b818dae4e20d325cb98c3c1e7da3d3bd18763b2d29a754ec8619342491dc08` |
+| Agreement #3 Funded Expiry Full Refund | `evidence/testnet-2026-10-09-block3b.md` Section 5 Case 3 | Tx `4d1b15c0d88c09f08fbcb2f7999281f7071ed03267e2351a80accd7c72839056` (Refunded 20,000,000 stroops / 2 XLM) |
+| Agreement #4 Dispute Resolution Full Refund | `evidence/testnet-2026-10-09-block3b.md` Section 5 Case 4 | Tx `55bfa433069d4c44e4d40748531e339b0788449f165f250f395b6bff0ccf7972` (Refunded 15,000,000 stroops / 1.5 XLM) |
+| Agreement #5 Provider Cancellation | `evidence/testnet-2026-10-09-block3b.md` Section 5 Case 6 | Tx `7a19745ede040c0ea51d55a9a2a8c3badbde8c341decb1b4cc9cae3bbadaf071` |
+| Agreement #7 Reconciler Defect Replay | `evidence/testnet-2026-10-09-block3b.md` Section 8.2 | Creation Tx `a46300429dc1d091a8e722e4b143129121c846a0c8b39dbf4b6ee4411ec1a264` (Ledger 5106190) |
+| Agreement #8 Browser Sponsor Funding | `evidence/testnet-2026-10-09-block3b.md` Section 8.3 | Tx `d2197fb8d30103d126d0c71f7328c12732d57dd92d9156c2534c1417a7ee5e06` (Ledger 5106918) |
+| Agreement #8 Browser Care Attestation | `evidence/testnet-2026-10-09-block3b.md` Section 8.3 | Tx `019fc50fc867eb7e1b9a71b775f82cbcb4462b16f2369fa2d1409b4ae17619f3` (Ledger 5107027) |
+| Agreement #8 Browser Outsider Settlement | `evidence/testnet-2026-10-09-block3b.md` Section 8.3 | Tx `b74947224324d11710d21aac3c36b46684af6fe0a7810aa425f6a841968e73fa` (Ledger 5107119), caller `GDBPGGUET2LIJEE3E7SB6GIUFSU4IW3OPDRAPCO56I6E63NH2H77CYSW` |
+| Signature Rejection Guard | `apps/web/lib/transaction-rejection.test.ts` | Unit test passing; 0 submissions |
 | Replay and Cursor Protection | `apps/api/internal/reconcile/runner_test.go` | `TestReconcileEvents_ReplayRecovery` passing |
 | On-Demand API Fallback | `apps/api/internal/api/agreements_test.go` | `TestGetAgreement_OnDemandFallback` passing |
 | WASM Parity Verification | `target/wasm32v1-none/release/*.wasm` | Exact SHA-256 match (`30924b0d...`, `b543e9a7...`) |

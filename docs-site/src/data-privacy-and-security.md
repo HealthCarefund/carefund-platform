@@ -65,8 +65,8 @@ CareFund contracts rely on Soroban Protocol 20+ persistent storage for agreement
 
 As part of repository hygiene, automated dependency scanners are executed periodically:
 - `cargo audit`: 0 vulnerabilities (1 allowed unmaintained crate warning for transitive macro dependency `paste`).
-- `govulncheck`: 0 critical vulnerabilities; 10 non-critical advisories in Go 1.27.1 standard library / x:text.
-- `pnpm audit` and `pnpm audit --prod`: 0 critical vulnerabilities; 9 advisories (1 low, 4 moderate, 4 high) in Next.js versions prior to 16.3.8. The application is run locally and is not exposed to public hosting.
+- `govulncheck`: 0 critical vulnerabilities; 0 standard-library findings on Go 1.27.2 baseline; 1 non-critical finding in transitive `golang.org/x/text`.
+- `pnpm audit` and `pnpm audit --prod`: 0 critical vulnerabilities; updated to Next.js and `eslint-config-next` 16.3.8 (resolving all direct Next advisories; 2 non-critical advisories in optional transitive build/image packages).
 
 ---
 

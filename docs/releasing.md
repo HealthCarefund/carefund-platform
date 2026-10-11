@@ -13,7 +13,7 @@ Ensure your local development environment satisfies all pinned toolchain version
 ```
 
 Required versions:
-- Go 1.27.1
+- Go 1.27.2
 - Node.js 24.21.0
 - pnpm 12.5.1
 - Rust 1.98.1
