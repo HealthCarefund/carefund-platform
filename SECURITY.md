@@ -5,7 +5,12 @@
 If you find a security issue in this repository, please report it
 privately rather than opening a public issue. Open a private security
 advisory on this GitHub repository, or contact the repository
-maintainer directly. Please include steps to reproduce, the affected
+maintainer directly:
+
+- GitHub: [ZeePearl56](https://github.com/ZeePearl56)
+- Email: `l2ejourney@gmail.com`
+
+Please include steps to reproduce, the affected
 component (contract, API, or web app), and, where relevant, the network
 (Testnet or otherwise) you observed it on.
 

@@ -109,7 +109,7 @@ lychee --offline --root-dir book/ --exclude-path book/404.html --exclude-path bo
 
 1. Make one genuine logical commit at a time. Stage only specific files, write clear commit messages, and avoid blanket additions (`git add .`).
 2. Never force-push or bypass branch protection on `main`. Branch protection requires all status checks to pass before merging.
-3. The human repository author is Hollujay. Do not add `Co-Authored-By` trailers for AI assistants or bots.
+3. The repository maintainer is [ZeePearl56](https://github.com/ZeePearl56). Do not add `Co-Authored-By` trailers for AI assistants or bots.
 4. Keep claims factual and backed by evidence. Do not invent test figures, coverage claims, external partnerships, or production milestones.
 5. Avoid em dashes and en dashes in documentation. Use standard hyphens, colons, or parentheses.
 6. When introducing or updating verification evidence, follow the project evidence taxonomy:
