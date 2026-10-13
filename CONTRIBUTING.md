@@ -23,12 +23,12 @@ CareFund pins exact versions of every development tool. Verify your local enviro
 ```
 
 Pinned tool versions (documented in `TOOLCHAIN.md`):
-- Go: 1.27.1
+- Go: 1.27.2
 - Node.js: 24.21.0 (managed via `.nvmrc`)
 - pnpm: 12.5.1 (enabled via Corepack)
 - Rust: 1.98.1 (managed via `rust-toolchain.toml`, target `wasm32v1-none`)
 - PostgreSQL: 18.6 (run via isolated Docker container on port 5439)
-- Stellar CLI: 27.0.0
+- Stellar CLI: 28.1.0 on the host / 27.0.0 in CI
 
 ## Local Development Setup
 
