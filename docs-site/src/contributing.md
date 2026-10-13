@@ -9,7 +9,7 @@ We welcome contributions to the CareFund project. To maintain repository safety 
 2. **Branch Protection**:
    All changes to `main` must arrive via pull request. Required CI checks (`Contracts`, `API`, `Web`) must pass before merging.
 3. **Attribution Integrity**:
-   The primary repository author is Hollujay. Never add automated AI co-author trailers (`Co-Authored-By`) or bot attribution.
+   The repository maintainer is [ZeePearl56](https://github.com/ZeePearl56). Never add automated AI co-author trailers (`Co-Authored-By`) or bot attribution.
 4. **No Factual Exaggerations**:
    Do not introduce unverified test counts, mock adoption metrics, fake hospital affiliations, or unmeasured coverage badges.
 5. **Punctuation Discipline**:

@@ -158,5 +158,5 @@ For vulnerability reporting procedures, review [SECURITY.md](./SECURITY.md).
 - **License**: [Apache-2.0](./LICENSE)
 - **Contribution Guidelines**: [CONTRIBUTING.md](./CONTRIBUTING.md)
 - **Code of Conduct**: [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
-- **Maintainer**: Hollujay (`locko.charles@gmail.com`)
+- **Maintainer**: [ZeePearl56](https://github.com/ZeePearl56) (`l2ejourney@gmail.com`)
 - **Roadmap and Next Steps**: [ROADMAP.md](./ROADMAP.md)
