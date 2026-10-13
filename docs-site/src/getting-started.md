@@ -11,7 +11,7 @@ Before starting, confirm your development environment matches the pinned version
 - **pnpm**: 12.5.1
 - **Rust**: 1.98.1 with target `wasm32v1-none`
 - **PostgreSQL**: 18.6 (run via Docker)
-- **Stellar CLI**: 27.0.0
+- **Stellar CLI**: 28.1.0 on the host / 27.0.0 in CI
 - **Docker & Docker Compose**: For running the isolated PostgreSQL container
 
 Verify your local toolchain using the repository verification script:

@@ -34,10 +34,10 @@ These gates must be satisfied before final grant or project submission:
    - Synchronized contract IDs, WASM hashes, and transaction proofs across `apps/web/.env.local`, `evidence/`, and documentation.
 3. **Live Browser Wallet Sign-off** (COMPLETED in Block 3B closeout):
    - Verified transaction signing in a live browser using the Freighter extension on Testnet for Agreement #8 full lifecycle (creation, funding, attestation, outsider settlement) and signature rejection guard path.
-4. **Documentation Publication Verification**:
-   - Verify that the static mdBook documentation site deploys cleanly via GitHub Pages to `https://healthcarefund.github.io/carefund-platform/` and all internal links resolve.
-5. **Release Readiness and Tagging**:
-   - Prepare version checklist and tag an official v0.1.0 release only after all above verification gates pass.
+4. **Documentation Publication Verification** (COMPLETED):
+   - Static mdBook documentation site verified and live on GitHub Pages at `https://healthcarefund.github.io/carefund-platform/`; verified via automated Docs workflow runs and offline Lychee link checking.
+5. **Release Readiness and Tagging** (COMPLETED):
+   - Official CareFund v0.1.0 release published at `https://github.com/HealthCarefund/carefund-platform/releases/tag/v0.1.0` with verified release contract WASM assets (`provider_registry.wasm` and `care_agreement.wasm`); git tag `v0.1.0` points to commit `1775f08621a246894c799263cae94d52e1274018`.
 
 ---
 
