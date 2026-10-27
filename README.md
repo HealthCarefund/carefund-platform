@@ -60,7 +60,7 @@ Charitable and subsidized healthcare programs frequently confront three systemic
 2. **Provider Cash-Flow Strain**: Requiring clinics to deliver care upfront and wait months for donor reimbursement strains community health operations.
 3. **Privacy Vulnerabilities**: Centralized grant tracking often exposes sensitive patient identities and diagnostic notes to donor auditing staff.
 
-CareFund is designed to reduce these trade-offs by holding donor funds in verifiable smart contract escrow upfront, releasing reimbursement to clinics only when authorized attesters verify clinical completion on-chain, and representing patient and service references through 32-byte cryptographic commitments.
+CareFund is designed to reduce these trade-offs by holding donor funds in verifiable smart contract escrow upfront, releasing reimbursement to clinics only after an authorized attester records a confirmation on-chain and a dispute window passes, and representing patient and service references through 32-byte cryptographic commitments.
 
 ## System Components
 
@@ -90,8 +90,8 @@ apps/
 1. **Provider Onboarding**: The contract administrator registers authorized clinics in `provider-registry` (`register_provider`) and authorizes bound attesters (`register_attester`). The registry records administrative authorization; it does not independently verify external medical accreditation.
 2. **Agreement Proposal**: A registered provider initializes a care agreement (`create_agreement`) specifying token amounts, deadlines, cryptographic commitment hashes, and authorized counterparty addresses. The contract requires provider authorization.
 3. **Escrow Deposit**: The sponsor deposits funds (`fund`) into the `care-agreement` contract via the Stellar Asset Contract (SAC).
-4. **Care Attestation**: Upon procedure completion, the designated attester verifies clinical delivery and submits an attestation hash (`attest_care`).
-5. **Autonomous Settlement**: Once care is attested and the dispute window elapses, settlement (`settle`) is callable deterministically by anyone, transferring reimbursement directly to the provider wallet and refunding any escrow surplus to the sponsor.
+4. **Care Attestation**: The designated attester submits an attestation hash (`attest_care`) no later than the care deadline. This is an authorized on-chain statement. The protocol does not independently verify that the care took place.
+5. **Autonomous Settlement**: Once care is attested and the dispute window (from the care deadline until `dispute_window_secs` after it) elapses, settlement (`settle`) is callable deterministically by anyone, transferring reimbursement directly to the provider wallet and refunding any escrow surplus to the sponsor.
 6. **Disputes and Safeguards**: If disagreements arise, either party can open a dispute (`open_dispute`) during the defined dispute window for administrative resolution (`resolve_dispute`).
 
 ## Local Quickstart
@@ -153,7 +153,7 @@ CareFund documents all claims using a transparent evidence taxonomy in [evidence
 | Toolchain Pinned Versions | VERIFIED | Validated via `scripts/check-toolchain.sh` |
 | Contracts Deployed to Testnet | VERIFIED | Block 3B deployed 2026-10-09 (`evidence/testnet-2026-10-09-block3b.md`); historical Block 1 on 2026-09-27 (`evidence/testnet-2026-09-27.md`) |
 | Full On-Chain Lifecycle | VERIFIED | Multi-agreement matrix: nominal settlement with surplus refund, requested expiry, funded expiry, dispute refund |
-| Negative Path Enforcement | VERIFIED LIVE | 9 invalid lifecycle scenarios simulation-rejected by live contract with exact ScError codes |
+| Negative Path Enforcement | VERIFIED LIVE | 8 invalid lifecycle scenarios itemized in the Block 3B evidence were simulation-rejected by the live contract with exact ScError codes (the evidence summary says nine; the ninth is not itemized) |
 | API Live Testnet Roundtrip | VERIFIED LIVE | `TestPrepareTransaction_FundLiveTestnet` and `TestLookupTransaction_SuccessLiveTestnet` verified against live contract |
 | Database Restart Recovery | VERIFIED LIVE | Background reconciliation worker confirms on-chain transactions and persists cursor across service restart |
 | Continuous Integration | VERIFIED | GitHub Actions workflows passing (Contracts, API, Web including SDK tests, Docs) |

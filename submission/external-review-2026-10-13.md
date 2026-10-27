@@ -109,3 +109,15 @@ The codebase demonstrates rigorous engineering practices, explicit deployment bo
 The repository state fully satisfies the requirements of the *Stellar Project Approval Playbook v2.0.0*. All claims remain traceable to concrete ledger proofs, toolchain pinning is consistent across all documents, deployment boundaries are rigorously defined, and no speculative or backdated artifacts have been introduced.
 
 **Readiness State**: The repository is ready for submission freeze pending live program eligibility verification by the maintainer.
+
+---
+
+## Addendum (2026-10-27): later observations
+
+This addendum was added after the review above. The text above is the original record and is unchanged. It was a simulated review written for the project, not an independent audit.
+
+1. **Open issues.** Section 2, item 3 recorded 0 open issues. As of 2026-10-27 there are 8 open issues (#21 to #28), opened on 2026-10-13. They are planned work.
+2. **Attester wording.** Items describing attesters as independent or as verification officers overstated what the contracts establish. The registry records an administrator's decision. The contract does not verify accreditation or independence, and an attestation is an authorized statement, not proof of treatment.
+3. **Demo record.** `submission/demo.md` used the state names `Created` and `Attested` and said the dispute window opened at attestation. The contract states are `Requested` and `CareConfirmed`, and the dispute window opens at `care_deadline`. Corrected in the 2026-10-27 documentation pass.
+4. **Negative-path count.** The Block 3B evidence summary refers to nine simulation-rejected negative paths; eight are itemized.
+5. **Registry rechecks.** `attest_care`, `settle` and `expire` do not consult the registry after creation. See `docs/trust-and-security-evidence.md`.

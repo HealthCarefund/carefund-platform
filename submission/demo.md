@@ -12,6 +12,10 @@ This document details the live product demonstration structure, environment boun
 
 *(No fabricated demo URL is provided).*
 
+**Status of this document.** Section 3 is a plan for a live demonstration that has not been recorded. Section 4 and the transaction hashes in it are an already completed and documented Testnet lifecycle (Agreement #8). The walkthrough in section 3 describes how the same flow would be shown live; it is not itself evidence that it ran.
+
+**Timing note for any live run.** The dispute window opens at `care_deadline`, not at attestation. Settlement is possible only after `care_deadline + dispute_window_secs`, even if the attestation was submitted early. The deadlines entered in Step 2 must be chosen with that in mind.
+
 ---
 
 ## 2. Demarcation of Verification Modes
@@ -53,7 +57,7 @@ The demo execution follows the critical end-to-end CareFund protocol lifecycle:
    - Funding deadline, care completion deadline, and dispute window duration.
    - 32-byte cryptographic commitments representing patient and service identifiers (precomputed SHA-256 hashes; no plaintext PHI).
 4. Initiate agreement creation. Freighter prompts for transaction signature (`create_agreement` on `care-agreement` contract).
-5. Transaction executes and transitions agreement to `Created` state.
+5. Transaction executes and the agreement is created in the `Requested` state.
 
 ### Step 3: Sponsor Escrow Funding
 1. Connect sponsor wallet `GDRS3XRDOIQ6ZOKKBWUZ3ZOXJE6XJIYWSPZCRLZSAHKRBL6JMOP3SYPH`.
@@ -62,18 +66,18 @@ The demo execution follows the critical end-to-end CareFund protocol lifecycle:
 4. Sponsor signs the authorization; funds are transferred into contract escrow via the Stellar Asset Contract (SAC).
 5. Agreement state updates to `Funded`.
 
-### Step 4: Attester Clinical Confirmation
+### Step 4: Attester Confirmation
 1. Connect authorized attester wallet `GB677TBBVXGLIFAYVLYZNTP4YHMHSL2OWHAQEUSVQDN4D2JYAWDCPFRT`.
 2. Locate the funded agreement.
-3. Submit 32-byte clinical completion attestation commitment hash (`attest_care`).
-4. Attester signs in Freighter; contract validates that the signer matches the authorized attester in `provider-registry`.
-5. Agreement status updates to `Attested`, triggering the dispute window countdown.
+3. Submit a 32-byte attestation commitment hash (`attest_care`). The contract does not check what the hash refers to.
+4. Attester signs in Freighter; the contract checks that the signer is the attester named in the agreement. (The registry bound that attester to the provider when the agreement was created; `attest_care` does not query the registry again.)
+5. Agreement status updates to `CareConfirmed`. This records an authorized attester's statement; it is not independent proof that care was delivered. No dispute clock starts at this point: the dispute window opens at `care_deadline`.
 
 ### Step 5: Transaction Confirmation & Final Agreement State
-1. Dispute window completes without dispute invocation.
+1. The ledger time passes `care_deadline + dispute_window_secs` with no dispute opened.
 2. Settle agreement (`settle`): executed permissionlessly by any account (including external third-party caller).
 3. Contract executes stroop-precise settlement:
-   - Provider receives the verified reimbursement amount (e.g., 8,000,000 stroops).
+   - Provider receives the agreed reimbursement amount (e.g., 8,000,000 stroops).
    - Sponsor automatically receives any remaining escrow surplus (e.g., 2,000,000 stroops).
 4. Agreement state reaches `Settled`. Per-agreement escrow liability returns to zero.
 5. Off-chain PostgreSQL mirror reconciles finalized status via background reconciler worker.
@@ -87,7 +91,7 @@ The full live browser lifecycle was verified on Stellar Testnet during Block 3B 
 | Step | Caller Address | Transaction Hash | Ledger | Verified Outcome |
 |---|---|---|---|---|
 | Sponsor Funding | `GDRS3XRDOIQ6ZOKKBWUZ3ZOXJE6XJIYWSPZCRLZSAHKRBL6JMOP3SYPH` | `d2197fb8d30103d126d0c71f7328c12732d57dd92d9156c2534c1417a7ee5e06` | 5106918 | 10,000,000 stroops (1 XLM) transferred to contract escrow |
-| Attestation | `GB677TBBVXGLIFAYVLYZNTP4YHMHSL2OWHAQEUSVQDN4D2JYAWDCPFRT` | `019fc50fc867eb7e1b9a71b775f82cbcb4462b16f2369fa2d1409b4ae17619f3` | 5107027 | Attestation commitment recorded; dispute window opened |
+| Attestation | `GB677TBBVXGLIFAYVLYZNTP4YHMHSL2OWHAQEUSVQDN4D2JYAWDCPFRT` | `019fc50fc867eb7e1b9a71b775f82cbcb4462b16f2369fa2d1409b4ae17619f3` | 5107027 | Attestation commitment recorded; state `CareConfirmed` |
 | Outsider Settlement | `GDBPGGUET2LIJEE3E7SB6GIUFSU4IW3OPDRAPCO56I6E63NH2H77CYSW` | `b74947224324d11710d21aac3c36b46684af6fe0a7810aa425f6a841968e73fa` | 5107119 | 8M stroops to provider; 2M stroops surplus refunded to sponsor |
 
 Final Agreement State: **Settled** (Net contract liability: 0 stroops).
