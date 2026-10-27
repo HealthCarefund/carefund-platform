@@ -34,10 +34,10 @@ Providers are registered clinics, hospitals, or medical entities delivering care
   - Opens disputes if attestation is improperly withheld (`open_dispute`).
 - **Authorization**: Protected on-chain by `provider.require_auth()`. Must maintain `ActorStatus::Active` in `provider-registry`.
 
-### 4. Independent Attester (`Attester`)
-Attesters are neutral verification agents, such as clinical auditors, program officers, or designated verification staff.
+### 4. Attester (`Attester`)
+Attesters are addresses the administrator registers and binds to a provider. The contracts do not verify an attester's real-world accreditation or that it is independent of the provider or sponsor.
 - **Responsibilities**:
-  - Reviews physical or off-chain evidence that clinical services were completed.
+  - Is expected to review off-chain evidence that clinical services were completed. The contract cannot check this.
   - Submits on-chain attestation commitments (`attest_care`).
   - Cannot withdraw, redirect, or seize escrowed funds.
 - **Authorization**: Protected on-chain by `attester.require_auth()`. Must be explicitly authorized for the target provider via `check_attester` in `provider-registry`.
@@ -51,7 +51,7 @@ Attesters are neutral verification agents, such as clinical auditors, program of
 | Initialize Registry | Admin | `initialize` | Uninitialized |
 | Register Provider | Admin | `register_provider` | Admin authorized |
 | Register Attester | Admin | `register_attester` | Provider active |
-| Create Agreement | Sponsor or Provider | `create_agreement` | Provider active, Attester authorized |
+| Create Agreement | Provider | `create_agreement` | Provider active, Attester authorized |
 | Deposit Escrow | Sponsor | `fund` | Requested, before `funding_deadline` |
 | Cancel Agreement | Provider | `cancel` | Requested |
 | Attest Care | Attester | `attest_care` | Funded, before `care_deadline` |

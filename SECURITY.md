@@ -70,10 +70,13 @@ Provider registration, suspension, reinstatement, and revocation, and
 attester registration and status changes, are all admin only calls on
 `contracts/provider-registry`, enforced by that contract's own
 `require_auth()`, not by `apps/api`. `contracts/care-agreement` checks a
-provider's active status and an attester's authorization for that
-provider through real cross contract calls into the registry at
-`create_agreement` and `fund` time, not through any value the caller
-supplies about themselves.
+provider's active status (at `create_agreement` and `fund`) and an
+attester's authorization for that provider (at `create_agreement`
+only) through real cross contract calls into the registry, not through
+any value the caller supplies about themselves. `attest_care`, `settle`
+and `expire` do not consult the registry, so a later suspension or
+revocation does not affect agreements that already exist. See
+`docs/trust-and-security-evidence.md`.
 
 ## Data privacy
 

@@ -6,11 +6,11 @@ This documentation book provides comprehensive guidance on CareFund's smart cont
 
 ## Core Objective
 
-In many healthcare scenarios, philanthropic sponsors or grant programs wish to fund critical medical care for beneficiaries directly, while ensuring funds are disbursed only when verified care is delivered by authorized providers. Traditional processes often suffer from opaque fund flows, administrative overhead, and delayed provider reimbursement.
+In many healthcare scenarios, philanthropic sponsors or grant programs wish to fund critical medical care for beneficiaries directly, while releasing funds only after an authorized attester has recorded that care was delivered and a dispute window has passed. Traditional processes often suffer from opaque fund flows, administrative overhead, and delayed provider reimbursement.
 
 CareFund provides a transparent coordination layer:
 - **Conditional Funding**: Sponsors deposit funds directly into smart contract escrow on Stellar.
-- **Independent Attestation**: Designated third-party attesters verify that agreed care was delivered before funds can be released.
+- **Authorized Attestation**: A designated attester registered by the administrator records on-chain that agreed care was delivered. The contract cannot verify the claim; a dispute window lets the sponsor or provider object before funds are released.
 - **Autonomous Settlement**: Providers claim agreed funds on-chain once attestation is registered and required time gates pass.
 - **Privacy Compartmentalization**: Raw patient references and clinical service descriptions are never stored on-chain or in backend databases; only precomputed 32-byte cryptographic commitments are recorded. Callers manage privacy and entropy off-chain.
 

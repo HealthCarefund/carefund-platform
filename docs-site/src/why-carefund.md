@@ -26,20 +26,20 @@ Instead of choosing between trust and administrative friction, CareFund introduc
 ### 1. Verified Escrow with Conditional Release
 Sponsors fund agreements upfront into the `care-agreement` contract escrow. Providers can see that funds are locked and earmarked specifically for their care delivery, reducing non-payment risk. The contract holds those funds until explicit criteria are satisfied.
 
-### 2. Independent Third-Party Attestation
-Neither the sponsor nor the provider unilaterally controls fund release. An authorized attester records an on-chain attestation commitment confirming that care was completed according to protocol.
+### 2. Authorized Attestation
+Neither the sponsor nor the provider can trigger payment by themselves before the dispute window ends. An authorized attester records an on-chain attestation commitment stating that care was completed. The contract does not verify the statement or the attester's independence, and a dispute by either party sends the decision to the administrator.
 
 ### 3. Clear Time-Gating and Dispute Windows
 Agreements define distinct deadlines:
 - **Funding Deadline**: If the sponsor fails to deposit funds before this deadline, the agreement can be expired or cancelled.
 - **Care Deadline**: The period during which care must be delivered and attested.
-- **Dispute Window**: A defined grace period following attestation or care delivery allowing legitimate objections before settlement executes.
+- **Dispute Window**: The period from the care deadline until `dispute_window_secs` after it, during which the sponsor or provider can open a dispute. It starts at the care deadline, not at attestation. Settlement is possible only after it closes.
 
 ### 4. Off-Chain Commitment Architecture
 Neither the Stellar blockchain nor CareFund's off-chain PostgreSQL database stores plaintext patient names, medical record numbers, diagnoses, or procedure descriptions. Instead, parties compute 32-byte cryptographic commitments off-chain:
 - `patient_ref_commitment`: 32-byte hash referencing the patient record held in the provider's external system.
 - `service_commitment`: 32-byte hash describing the agreed clinical protocol.
-- `attestation_commitment`: 32-byte hash verifying clinical completion notes.
+- `attestation_commitment`: 32-byte value chosen by the attester. The contract stores it and does not verify what it refers to.
 
 Callers are responsible for computing privacy-safe commitments. CareFund makes no claim of HIPAA or GDPR compliance.
 
@@ -48,5 +48,5 @@ Callers are responsible for computing privacy-safe commitments. CareFund makes n
 CareFund relies on foundational capabilities provided by the Stellar network:
 - **Predictable, Sub-Cent Transaction Costs**: High fee volatility makes micro-reimbursements unviable on many chains. Stellar fees remain negligible.
 - **Fast Deterministic Finality**: Ledgers close every 5 seconds, providing rapid state confirmation for patients and clinics.
-- **Stellar Asset Contract (SAC)**: Direct integration with native XLM and regulated stablecoins (such as USDC) without requiring custom token wrappers.
+- **Stellar Asset Contract (SAC)**: Integration with Stellar assets without custom token wrappers. Only native XLM has been used in the recorded Testnet verification.
 - **Explicit Authorization (`require_auth`)**: Soroban's authorization framework guarantees that only the authentic cryptographic signer can invoke role-protected actions.
