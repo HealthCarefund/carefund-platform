@@ -5,8 +5,10 @@
 //! Maintains the active authorization set of providers and attesters.
 //! Owns the actor lifecycle: registration, suspension, reinstatement, and revocation.
 
+mod multisig_testutils;
 mod test;
 mod test_admin_rotation;
+mod test_multisig_admin;
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,

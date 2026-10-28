@@ -4,9 +4,11 @@
 //!
 //! Enforces the lifecycle and financial settlement of healthcare care agreements.
 
+mod multisig_testutils;
 mod test;
 mod test_admin_rotation;
 mod test_attester_authorization;
+mod test_multisig_admin;
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Map,
