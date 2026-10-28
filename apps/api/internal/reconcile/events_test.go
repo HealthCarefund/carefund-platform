@@ -1,6 +1,8 @@
 package reconcile
 
 import (
+	"math"
+	"strings"
 	"testing"
 
 	protocol "github.com/stellar/go-stellar-sdk/protocols/rpc"
@@ -83,6 +85,93 @@ func TestAgreementIDFromEventValue_FalseForEmpty(t *testing.T) {
 	if ok {
 		t.Error("expected ok=false for an empty value")
 	}
+}
+
+func TestStoreEvent_ValidatesContractPayloadsBeforeCheckpointing(t *testing.T) {
+	s := newTestStore(t)
+	runner := New(s, nil, testLogger(), 0, testProviderRegistryID, testCareAgreementID, testSettlementAssetID)
+
+	badAgreement := protocol.EventInfo{
+		EventType:       protocol.EventTypeContract,
+		ContractID:      testCareAgreementID,
+		ID:              "0000000000000000001-0000000000",
+		TransactionHash: strings.Repeat("a", 64),
+		TopicXDR:        []string{symbolTopicXDR(t, "agr_fun")},
+		ValueXDR:        addressValueXDR(t),
+	}
+	if err := runner.storeEvent(t.Context(), badAgreement); err == nil {
+		t.Fatal("agreement event with address payload must be rejected")
+	}
+
+	overflow := u64ValueXDR(t, math.MaxUint64)
+	badOverflow := badAgreement
+	badOverflow.TransactionHash = strings.Repeat("b", 64)
+	badOverflow.ValueXDR = overflow
+	if err := runner.storeEvent(t.Context(), badOverflow); err == nil {
+		t.Fatal("agreement ID above int64 range must be rejected")
+	}
+
+	badProvider := badAgreement
+	badProvider.ContractID = testProviderRegistryID
+	badProvider.TransactionHash = strings.Repeat("c", 64)
+	badProvider.TopicXDR = []string{symbolTopicXDR(t, "prov_reg")}
+	badProvider.ValueXDR = u64ValueXDR(t, 7)
+	if err := runner.storeEvent(t.Context(), badProvider); err == nil {
+		t.Fatal("provider event with agreement-ID payload must be rejected")
+	}
+
+	badTopic := badAgreement
+	badTopic.TransactionHash = strings.Repeat("d", 64)
+	badTopic.TopicXDR = []string{"not-xdr"}
+	if err := runner.storeEvent(t.Context(), badTopic); err == nil {
+		t.Fatal("malformed contract topic must be rejected")
+	}
+}
+
+func TestStoreEvent_AcceptsInitializationAndAdminRotationPayloads(t *testing.T) {
+	s := newTestStore(t)
+	runner := New(s, nil, testLogger(), 0, testProviderRegistryID, testCareAgreementID, testSettlementAssetID)
+
+	initEvent := protocol.EventInfo{
+		EventType:       protocol.EventTypeContract,
+		ContractID:      testProviderRegistryID,
+		ID:              "0000000000000000002-0000000000",
+		TransactionHash: strings.Repeat("e", 64),
+		TopicXDR:        []string{symbolTopicXDR(t, "init")},
+		ValueXDR:        addressValueXDR(t),
+	}
+	if err := runner.storeEvent(t.Context(), initEvent); err != nil {
+		t.Fatalf("valid init event: %v", err)
+	}
+
+	rotation := initEvent
+	rotation.ID = "0000000000000000003-0000000000"
+	rotation.TransactionHash = strings.Repeat("f", 64)
+	rotation.TopicXDR = []string{symbolTopicXDR(t, "adm_rot")}
+	rotation.ValueXDR = adminRotationValueXDR(t)
+	if err := runner.storeEvent(t.Context(), rotation); err != nil {
+		t.Fatalf("valid adm_rot event: %v", err)
+	}
+}
+
+func adminRotationValueXDR(t *testing.T) string {
+	t.Helper()
+	accountID, err := xdr.AddressToAccountId("GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF")
+	if err != nil {
+		t.Fatalf("building account id: %v", err)
+	}
+	address := func() xdr.ScVal {
+		a := xdr.ScAddress{Type: xdr.ScAddressTypeScAddressTypeAccount, AccountId: &accountID}
+		return xdr.ScVal{Type: xdr.ScValTypeScvAddress, Address: &a}
+	}
+	vec := xdr.ScVec{address(), address()}
+	vecPtr := &vec
+	val := xdr.ScVal{Type: xdr.ScValTypeScvVec, Vec: &vecPtr}
+	b, err := xdr.MarshalBase64(val)
+	if err != nil {
+		t.Fatalf("marshaling admin rotation payload: %v", err)
+	}
+	return b
 }
 
 func TestParseEventIndex(t *testing.T) {
