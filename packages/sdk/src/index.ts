@@ -61,6 +61,16 @@ export {
   InvalidLifecycleTransitionError,
 } from "./transaction/lifecycle.js";
 
+export type {
+  AgreementLifecycleOperation,
+  AgreementLifecycleCall,
+  CreateAgreementCall,
+} from "./transaction/validate.js";
+export {
+  validateAgreementLifecycleTransaction,
+  validateCreateAgreementTransaction,
+} from "./transaction/validate.js";
+
 export {
   SdkError,
   ConfigValidationError,
@@ -73,6 +83,7 @@ export {
   SubmissionRejectedError,
   TransactionFailedError,
   TransactionTimeoutError,
+  TransactionValidationError,
 } from "./errors.js";
 
 export {

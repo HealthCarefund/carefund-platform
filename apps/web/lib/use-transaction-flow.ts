@@ -9,12 +9,17 @@ import {
   simulateContractCall,
   prepareContractCallTransaction,
   createAgreementTransaction,
+  getAgreement,
+  validateAgreementLifecycleTransaction,
+  validateCreateAgreementTransaction,
   WalletSigningRejectedError,
   SubmissionRejectedError,
   SimulationFailedError,
+  TransactionValidationError,
   type WalletSigner,
   type CreateAgreementParams,
 } from "@carefund/sdk";
+import { toAgreementId } from "@carefund/types";
 import { getStellarConfig } from "./stellar-config";
 import {
   prepareAgreementTransaction,
@@ -61,20 +66,68 @@ export interface RunTransactionParams {
  * backend (build + simulate + assemble happen server-side; see
  * apps/api/internal/api/transactions.go, Commit 13). Use this for
  * fund/cancel/attest_care/open_dispute/expire/settle/resolve_dispute.
+ *
+ * The backend's response is never treated as authoritative: before
+ * returning, this independently re-derives and checks the network,
+ * source account, operation, contract, function, arguments, transaction
+ * constraints and Soroban authorization against exactly what the caller
+ * requested (see `@carefund/sdk`'s `validateAgreementLifecycleTransaction`,
+ * packages/sdk/src/transaction/validate.ts). A mismatch throws
+ * `TransactionValidationError` before any wallet-signing call happens.
  */
 export function prepareViaBackend(params: RunTransactionParams): TransactionPreparer {
   return async () => {
+    const config = getStellarConfig();
     const prepared = await prepareAgreementTransaction(params.agreementId, {
       operation: params.operation,
       sourcePublicKey: params.sourcePublicKey,
       attestationCommitment: params.attestationCommitment,
       resolution: params.resolution,
     });
-    const envelope = TransactionBuilder.fromXDR(prepared.unsignedTransactionXdr, prepared.networkPassphrase);
-    if (!("signatures" in envelope)) {
-      throw new Error("Prepared transaction is not a signable envelope");
+
+    // Never parse (let alone sign for) a network other than the one this
+    // app is independently configured for, even if the API returned a
+    // passphrase alongside the XDR — that value is not trusted merely
+    // because it arrived with the transaction.
+    if (prepared.networkPassphrase !== config.networkPassphrase) {
+      throw new TransactionValidationError([
+        `network passphrase mismatch: expected "${config.networkPassphrase}", got "${prepared.networkPassphrase}"`,
+      ]);
     }
-    return { transaction: envelope as Transaction, networkPassphrase: prepared.networkPassphrase };
+
+    let envelope: ReturnType<typeof TransactionBuilder.fromXDR>;
+    try {
+      envelope = TransactionBuilder.fromXDR(prepared.unsignedTransactionXdr, prepared.networkPassphrase);
+    } catch (err) {
+      throw new TransactionValidationError([
+        `malformed transaction XDR: ${err instanceof Error ? err.message : String(err)}`,
+      ]);
+    }
+    if (!("signatures" in envelope)) {
+      throw new TransactionValidationError(["prepared transaction is a fee-bump envelope, not a signable transaction"]);
+    }
+    const transaction = envelope as Transaction;
+
+    // `fund`'s escrow-transfer amount is not one of its own call arguments
+    // — the contract reads it from stored agreement state — so there is no
+    // way to verify that nested authorization without an independent,
+    // trustworthy source for it. Read it fresh from the contract itself,
+    // never from this app's own off-chain cache.
+    const expectedFundingAmount =
+      params.operation === "fund"
+        ? (await getAgreement(config, toAgreementId(params.agreementId))).fundingAmount
+        : undefined;
+
+    validateAgreementLifecycleTransaction(config, transaction, prepared.networkPassphrase, {
+      operation: params.operation,
+      agreementId: params.agreementId,
+      sourcePublicKey: params.sourcePublicKey,
+      attestationCommitment: params.attestationCommitment,
+      resolution: params.resolution,
+      expectedFundingAmount,
+    });
+
+    return { transaction, networkPassphrase: prepared.networkPassphrase };
   };
 }
 
@@ -96,6 +149,25 @@ export function prepareCreateAgreement(params: CreateAgreementParams): Transacti
     // call would fail — never silently proceeds to signing on a bad call.
     await simulateContractCall(rpc, built);
     const prepared = await prepareContractCallTransaction(rpc, built);
+
+    // Built and simulated client-side rather than returned by the API, but
+    // validated the same way for consistency: this is the one path where a
+    // compromised RPC endpoint (not a compromised backend) would have to be
+    // the attacker, and the same checks catch it just as well.
+    validateCreateAgreementTransaction(config, prepared, config.networkPassphrase, {
+      sourcePublicKey: params.sourcePublicKey,
+      provider: params.provider,
+      sponsor: params.sponsor,
+      attester: params.attester,
+      patientRefCommitment: params.patientRefCommitment,
+      serviceCommitment: params.serviceCommitment,
+      fundingAmount: params.fundingAmount,
+      settlementAmount: params.settlementAmount,
+      fundingDeadline: params.fundingDeadline,
+      careDeadline: params.careDeadline,
+      disputeWindowSecs: params.disputeWindowSecs,
+    });
+
     return { transaction: prepared, networkPassphrase: config.networkPassphrase };
   };
 }
@@ -105,6 +177,70 @@ const CONFIRMATION_INTERVAL_MS = 3000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * The actual preparation-to-confirmation control flow: prepare (which
+ * independently validates, per `prepareViaBackend`/`prepareCreateAgreement`
+ * above) → wallet signing → RPC submission → confirmation polling. Pulled
+ * out of `useTransactionFlow` as a plain async function — not a hook — so
+ * it can be exercised directly in tests against the real implementation,
+ * without rendering a React component or reimplementing this sequence
+ * inside a test. `useTransactionFlow.run` below is a thin wrapper that
+ * supplies `onState`/`isCancelled` from its own `useState`/`useRef`.
+ *
+ * Preparation strictly precedes signing: if `prepare()` rejects (as it
+ * does for every `TransactionValidationError` case), `awaitWalletSignature`
+ * is never reached — there is no path from a thrown `prepare()` to the
+ * signing/submission steps below. The "failed" state is terminal here; it
+ * never carries a hash because `prepare()` rejecting happens before any
+ * hash could exist.
+ */
+export async function runTransactionPipeline(
+  prepare: TransactionPreparer,
+  getSigner: () => WalletSigner,
+  onState: (state: TransactionFlowState) => void,
+  isCancelled: () => boolean,
+): Promise<void> {
+  try {
+    onState({ phase: "preparing" });
+    onState({ phase: "simulating" });
+    const { transaction, networkPassphrase } = await prepare();
+    if (isCancelled()) return;
+
+    onState({ phase: "awaiting_signature" });
+    const signed = await awaitWalletSignature(getSigner(), transaction, networkPassphrase);
+    if (isCancelled()) return;
+
+    onState({ phase: "submitting" });
+    const rpc = createRpcServer(getStellarConfig());
+    const { hash } = await submitToRpc(rpc, signed);
+    if (isCancelled()) return;
+    onState({ phase: "submitted", hash });
+
+    for (let attempt = 1; attempt <= CONFIRMATION_ATTEMPTS; attempt++) {
+      if (isCancelled()) return;
+      onState({ phase: "confirming", hash, attempt });
+      const lookup = await lookupTransaction(hash);
+      if (isCancelled()) return;
+
+      if (lookup.status === "success") {
+        onState({ phase: "confirmed", hash, ledger: lookup.ledger });
+        return;
+      }
+      if (lookup.status === "failed") {
+        onState({ phase: "failed", hash, reason: "Transaction failed on-chain" });
+        return;
+      }
+      if (attempt < CONFIRMATION_ATTEMPTS) {
+        await sleep(CONFIRMATION_INTERVAL_MS);
+      }
+    }
+    onState({ phase: "timeout", hash });
+  } catch (err) {
+    if (isCancelled()) return;
+    onState({ phase: "failed", reason: describeError(err) });
+  }
 }
 
 export function useTransactionFlow(getSigner: () => WalletSigner) {
@@ -119,46 +255,7 @@ export function useTransactionFlow(getSigner: () => WalletSigner) {
   const run = useCallback(
     async (prepare: TransactionPreparer) => {
       cancelled.current = false;
-
-      try {
-        setState({ phase: "preparing" });
-        setState({ phase: "simulating" });
-        const { transaction, networkPassphrase } = await prepare();
-        if (cancelled.current) return;
-
-        setState({ phase: "awaiting_signature" });
-        const signed = await awaitWalletSignature(getSigner(), transaction, networkPassphrase);
-        if (cancelled.current) return;
-
-        setState({ phase: "submitting" });
-        const rpc = createRpcServer(getStellarConfig());
-        const { hash } = await submitToRpc(rpc, signed);
-        if (cancelled.current) return;
-        setState({ phase: "submitted", hash });
-
-        for (let attempt = 1; attempt <= CONFIRMATION_ATTEMPTS; attempt++) {
-          if (cancelled.current) return;
-          setState({ phase: "confirming", hash, attempt });
-          const lookup = await lookupTransaction(hash);
-          if (cancelled.current) return;
-
-          if (lookup.status === "success") {
-            setState({ phase: "confirmed", hash, ledger: lookup.ledger });
-            return;
-          }
-          if (lookup.status === "failed") {
-            setState({ phase: "failed", hash, reason: "Transaction failed on-chain" });
-            return;
-          }
-          if (attempt < CONFIRMATION_ATTEMPTS) {
-            await sleep(CONFIRMATION_INTERVAL_MS);
-          }
-        }
-        setState({ phase: "timeout", hash });
-      } catch (err) {
-        if (cancelled.current) return;
-        setState({ phase: "failed", reason: describeError(err) });
-      }
+      await runTransactionPipeline(prepare, getSigner, setState, () => cancelled.current);
     },
     [getSigner],
   );
@@ -179,6 +276,9 @@ export function describeError(err: unknown): string {
   }
   if (err instanceof SimulationFailedError) {
     return err.message;
+  }
+  if (err instanceof TransactionValidationError) {
+    return "The prepared transaction did not match what was requested and was not sent to your wallet.";
   }
   if (err instanceof ApiError) {
     return err.body?.message ?? "The request was rejected.";
