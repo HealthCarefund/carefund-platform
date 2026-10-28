@@ -280,8 +280,8 @@ func TestReconcileEvents_PersistsCursorAndIngestsIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetReconciliationCursor: %v", err)
 	}
-	if cursor != "502" {
-		t.Errorf("cursor = %q, want 502 (LatestLedger + 1)", cursor)
+	if cursor != event.ID {
+		t.Errorf("cursor = %q, want %q (the last successfully processed event's own id, not LatestLedger + 1)", cursor, event.ID)
 	}
 
 	// A second pass re-fetching the same event must not create a
@@ -634,12 +634,12 @@ func TestReconcileEvents_ReplayRecovery(t *testing.T) {
 		t.Fatalf("page = %+v, want 1 agr_cre event", page)
 	}
 
-	// Cursor must now be advanced past the replayed ledger
+	// Cursor must now be advanced to the replayed event's own id.
 	cursorAfterReplay, err := s.GetReconciliationCursor(ctx, eventCursorKey)
 	if err != nil {
 		t.Fatalf("GetReconciliationCursor: %v", err)
 	}
-	if cursorAfterReplay != "502" {
-		t.Errorf("cursor after replay = %q, want 502", cursorAfterReplay)
+	if cursorAfterReplay != event.ID {
+		t.Errorf("cursor after replay = %q, want %q", cursorAfterReplay, event.ID)
 	}
 }

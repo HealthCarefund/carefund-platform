@@ -35,3 +35,57 @@ func (s *Store) SetReconciliationCursor(ctx context.Context, key, value string) 
 	}
 	return nil
 }
+
+// AcknowledgeReconciliationGap atomically records an operator's approved
+// resume position and the corresponding acknowledgement. Both values are
+// compared with the caller's read before either row is changed, so a stale
+// operator action cannot overwrite newer reconciliation state.
+func (s *Store) AcknowledgeReconciliationGap(ctx context.Context, gapKey, cursorKey, expectedGap, expectedCursor, newCursor, acknowledgedGap string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning reconciliation gap acknowledgement: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var currentGap string
+	if err := tx.QueryRow(ctx, `
+		SELECT value FROM reconciliation_state WHERE key = $1 FOR UPDATE
+	`, gapKey).Scan(&currentGap); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("locking reconciliation gap: %w", err)
+	}
+	if currentGap != expectedGap {
+		return fmt.Errorf("reconciliation gap changed while it was being acknowledged")
+	}
+
+	var currentCursor string
+	if err := tx.QueryRow(ctx, `
+		SELECT value FROM reconciliation_state WHERE key = $1 FOR UPDATE
+	`, cursorKey).Scan(&currentCursor); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("locking reconciliation cursor: %w", err)
+	}
+	if currentCursor != expectedCursor {
+		return fmt.Errorf("reconciliation cursor changed while the gap was being acknowledged")
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE reconciliation_state SET value = $2, updated_at = now() WHERE key = $1
+	`, cursorKey, newCursor); err != nil {
+		return fmt.Errorf("updating reconciliation cursor: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE reconciliation_state SET value = $2, updated_at = now() WHERE key = $1
+	`, gapKey, acknowledgedGap); err != nil {
+		return fmt.Errorf("recording reconciliation acknowledgement: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing reconciliation gap acknowledgement: %w", err)
+	}
+	return nil
+}

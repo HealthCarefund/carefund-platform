@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	protocol "github.com/stellar/go-stellar-sdk/protocols/rpc"
@@ -38,6 +39,7 @@ type Runner struct {
 	providerRegistryContractID string
 	careAgreementContractID    string
 	settlementAssetContractID  string
+	eventMu                    sync.Mutex
 }
 
 // New builds a Runner. interval is how often each reconciliation pass
