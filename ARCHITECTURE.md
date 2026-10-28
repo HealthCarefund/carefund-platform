@@ -78,7 +78,7 @@ Only two contracts are CareFund-owned. The settlement asset contract is a third 
 
 Stated plainly, the properties CareFund uses and where each shows up in the code:
 
-- **`Address::require_auth`**: every role check is a signature check by the named address (for example `fund` at `care-agreement/src/lib.rs:462`, `attest_care` at `:682`). There is no password, session or API key on the authorization path.
+- **`Address::require_auth`**: every role check is a signature check by the named address (for example `fund` at `care-agreement/src/lib.rs:495`, `attest_care` at `:715`). There is no password, session or API key on the authorization path.
 - **A built-in token interface (SAC)**: native XLM can be escrowed with `transfer` calls and no CareFund token code. The contract holds balances at its own contract address.
 - **Atomic multi-call transactions**: the provider payment and the sponsor surplus refund in `settle` happen in one transaction or not at all.
 - **Ledger timestamps**: deadlines use `env.ledger().timestamp()`, which every validator agrees on.
@@ -116,13 +116,19 @@ What the admin cannot do, because no function exists:
 - Touch an agreement that is not `Disputed`.
 - Sweep contract balances or withdraw stray tokens.
 - Upgrade contract code. Neither contract calls `update_current_contract_wasm` (verified by search).
-- Change the admin address. Neither contract has a rotation or transfer-of-admin function.
+- Change the admin address alone. Rotation needs a second signature (below).
 
-The last point is a risk as well as a restriction: a lost admin key cannot be replaced. See section 14.
+### Admin rotation
+
+Both contracts have `transfer_admin(new_admin)`. It requires authorization from the current admin and from `new_admin` in the same call, so a role cannot be pushed onto an address that has not agreed to hold it. It replaces the value under the existing admin storage key atomically, emits an `adm_rot` event carrying the old and new addresses, and touches nothing else: no agreement, registry record, balance or dispute state is read or changed, and it creates no path for moving escrow. Calling it with the current admin as `new_admin` is an authorized no-op. After a rotation the previous admin fails every admin-only call, including `resolve_dispute` and the registry's provider and attester management.
+
+The two contracts keep separate admins, so rotating one does not change the other.
+
+Rotation is a handover tool, not recovery. It needs the current admin's signature, so it cannot help once that key is lost. See section 14 and [docs/dispute-recovery-proposal.md](./docs/dispute-recovery-proposal.md). `transfer_admin` is in the source and tested locally only. It is not in the deployed Testnet contracts (care_agreement WASM `b543e9a7...`, provider_registry WASM `30924b09...`), which have no admin rotation, so the deployed admins cannot use it.
 
 ## 6. Agreement state machine
 
-States (`AgreementState`, `care-agreement/src/lib.rs:36`): `Requested`, `Funded`, `CareConfirmed`, `Disputed`, `Cancelled`, `Expired`, `Refunded`, `Settled`.
+States (`AgreementState`, `care-agreement/src/lib.rs:37`): `Requested`, `Funded`, `CareConfirmed`, `Disputed`, `Cancelled`, `Expired`, `Refunded`, `Settled`.
 
 ```mermaid
 stateDiagram-v2
@@ -153,10 +159,10 @@ create ──── funding_deadline ──── care_deadline ──── car
 
 Boundaries, taken from the code:
 
-- `fund` fails when `now > funding_deadline` (`lib.rs:484`). `expire` on `Requested` fails when `now <= funding_deadline` (`:608`). At exactly the deadline funding is allowed and expiry is not.
-- `attest_care` fails when `now > care_deadline` (`:704`).
-- `open_dispute` requires `care_deadline < now <= care_deadline + dispute_window_secs` (`:787-792`).
-- `settle` and `expire` (on `Funded`) require `now > care_deadline + dispute_window_secs` (`:622`, `:853`).
+- `fund` fails when `now > funding_deadline` (`lib.rs:517`). `expire` on `Requested` fails when `now <= funding_deadline` (`:641`). At exactly the deadline funding is allowed and expiry is not.
+- `attest_care` fails when `now > care_deadline` (`:737`).
+- `open_dispute` requires `care_deadline < now <= care_deadline + dispute_window_secs` (`:820-825`).
+- `settle` and `expire` (on `Funded`) require `now > care_deadline + dispute_window_secs` (`:655`, `:886`).
 
 **The dispute window starts at `care_deadline`, not at attestation.** An attestation made well before the care deadline does not start any clock. Disputes cannot be opened before `care_deadline`, and settlement cannot happen before `care_deadline + dispute_window_secs`, whenever the attestation was made. The attestation timestamp (`attested_at`) is recorded but not used in any timing check.
 
@@ -164,7 +170,7 @@ Because dispute is allowed through `care_deadline + window` inclusive and settle
 
 ## 7. Flows
 
-### Funding (`fund`, `lib.rs:461`)
+### Funding (`fund`, `lib.rs:494`)
 
 1. Sponsor signs. Agreement must be `Requested` and the signer must equal `agreement.sponsor`.
 2. `now <= funding_deadline`.
@@ -172,7 +178,7 @@ Because dispute is allowed through `care_deadline + window` inclusive and settle
 4. `transfer(sponsor, this_contract, funding_amount)` on the settlement asset. If the sponsor lacks funds the call traps and the whole transaction reverts.
 5. State becomes `Funded`.
 
-### Attestation (`attest_care`, `:676`)
+### Attestation (`attest_care`, `:709`)
 
 Agreement must be `Funded`, signer must equal `agreement.attester`, and `now <= care_deadline`. It stores the 32-byte `attestation_commitment`, the attester address and the timestamp, and moves to `CareConfirmed`. It moves no funds. Before recording, it reads the attester's current record from the registry (`get_attester`) and requires status `Active` and a binding to `agreement.provider`; otherwise it returns `AttesterNotAuthorized` and changes nothing. It does not require the provider to be `Active`, so suspending a provider alone does not stop a funded agreement from being attested. If the registry call fails or the record cannot be decoded, the attestation is rejected. This attestation-time check is in the source but not in the current Testnet deployment (care_agreement WASM `b543e9a7...`), which predates it. It has been tested locally only and is not `VERIFIED LIVE`.
 
@@ -186,11 +192,11 @@ Agreement must be `Funded`, signer must equal `agreement.attester`, and `now <= 
 
 Suspending or revoking an attester therefore stops new attestations but does not rewrite an attestation already accepted. Suspension is reversible: a reinstated attester can attest again before the care deadline. Revocation is terminal.
 
-### Settlement (`settle`, `:829`)
+### Settlement (`settle`, `:862`)
 
 Callable by anyone, no signature required. Requires `CareConfirmed` and `now > care_deadline + dispute_window_secs`. Transfers `settlement_amount` to the provider, then `funding_amount - settlement_amount` (checked subtraction) to the sponsor if positive, then sets `Settled`. A second call fails with `InvalidState`.
 
-### Expiry (`expire`, `:595`)
+### Expiry (`expire`, `:628`)
 
 Callable by anyone.
 
@@ -198,13 +204,13 @@ Callable by anyone.
 - `Funded` and `now > care_deadline + dispute_window_secs`: refunds the full `funding_amount` to the sponsor and becomes `Expired`.
 - `CareConfirmed` or any other state: `InvalidState`. Attested care cannot be expired.
 
-### Dispute (`open_dispute`, `:753`, and `resolve_dispute`, `:923`)
+### Dispute (`open_dispute`, `:786`, and `resolve_dispute`, `:956`)
 
 The sponsor or the provider can open a dispute on a `Funded` or `CareConfirmed` agreement inside the window. The origin state is stored. Only the admin can resolve it, as described in section 5. There is **no timeout**: a `Disputed` agreement stays `Disputed` until the admin acts. Neither `settle` nor `expire` accepts a `Disputed` agreement.
 
 Either party can freeze a `CareConfirmed` agreement by disputing inside the window. Permissionless settlement is therefore guaranteed only when neither the sponsor nor the provider disputes.
 
-### Cancel (`cancel`, `:550`)
+### Cancel (`cancel`, `:583`)
 
 Provider only, only in `Requested`. No funds have moved.
 
@@ -221,8 +227,8 @@ Provider only, only in `Requested`. No funds have moved.
 
 For an agreement with funding amount `F` and settlement amount `S`:
 
-- Creation requires `0 < S <= F` (`lib.rs:334-339`).
-- Creation rejects `care_deadline + dispute_window_secs` overflow (`:356`), so later deadline arithmetic cannot trap.
+- Creation requires `0 < S <= F` (`lib.rs:367-372`).
+- Creation rejects `care_deadline + dispute_window_secs` overflow (`:389`), so later deadline arithmetic cannot trap.
 - Every terminal path moves exactly `F` out of the contract for that agreement: `S` plus `F - S` on settlement, `F` on refund or funded expiry. Unfunded paths move nothing.
 - The per-agreement accounting uses the stored `funding_amount` and `settlement_amount`, never the contract's token balance. One agreement cannot draw on another's deposit through the contract logic. This was exercised live with agreements 3 and 4 funded at once (Testnet evidence, Case 5).
 - The contract holds a pooled balance. Anyone can send tokens directly to a contract address, so the balance can exceed the sum of open escrows. The contract has no sweep function, so such stray tokens are unrecoverable. The claim "balance returns to zero when all agreements finalize" holds only if nobody sends tokens to the contract directly.
@@ -297,12 +303,12 @@ Contract behavior (from the code):
 
 - **Registry status after attestation is not rechecked.** `attest_care` now requires the attester to be currently `Active` (source only; see section 7), but `settle`, `expire` and dispute resolution do not call the registry. A suspended or revoked provider is still paid by `settle` and refunded by `expire`, and an attestation accepted before a revocation stands. The `Active` provider requirement exists only at creation and funding.
 - **No attester replacement.** If an agreement's designated attester is permanently revoked, that agreement cannot be attested. The sponsor refund path stays available through `expire` after `care_deadline + dispute_window_secs`, unless a dispute is open. There is no way to name a different attester or add one.
-- **Disputes can stay open forever.** No timeout, no fallback, and admin rotation does not exist. An unresponsive or lost admin key leaves disputed funds locked.
+- **Disputes can stay open forever.** There is no timeout and no fallback. `transfer_admin` lets a working admin hand over the role, but it cannot recover a lost key, so an unresponsive or lost care-agreement admin key still leaves disputed funds locked. Options are weighed in [docs/dispute-recovery-proposal.md](./docs/dispute-recovery-proposal.md); none is implemented.
 - **Single admin trust.** The admin chooses between paying the provider and refunding the sponsor on every disputed agreement. It cannot redirect funds elsewhere, but it decides who gets them.
 - **A sponsor can delay a provider.** Opening a dispute inside the window forces admin adjudication even for an attested agreement.
 - **A dishonest attester can cause payment for care that did not happen**, and the sponsor's only remedy is to dispute inside the window. Outside the window there is none.
 - **Dispute window starts at the care deadline**, so the earliest payment is always after `care_deadline + dispute_window_secs`, even for early attestation.
-- **No admin rotation or contract upgrade path.** Immutability helps trust and hurts recovery.
+- **No contract upgrade path, and rotation is not in the deployed contracts.** Immutability helps trust and hurts recovery. Fixes, including `transfer_admin`, reach only newly deployed instances.
 - **Event publishing uses a deprecated API** (tracked in SECURITY.md).
 
 Process and scope:

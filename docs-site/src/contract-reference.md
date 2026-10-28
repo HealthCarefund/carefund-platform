@@ -41,6 +41,7 @@ pub struct AttesterRecord {
 |---|---|---|---|
 | `initialize` | `admin: Address` | None (one-time) | Initializes registry with admin |
 | `get_admin` | None | None | Returns admin address |
+| `transfer_admin` | `new_admin: Address` | Current admin and `new_admin` | Replaces the admin (source only; not in the deployed Testnet contract) |
 | `register_provider` | `provider: Address, provider_ref: BytesN<32>` | Admin | Registers new provider as Active |
 | `suspend_provider` | `provider: Address` | Admin | Sets provider status to Suspended |
 | `reinstate_provider` | `provider: Address` | Admin | Sets provider status back to Active |
@@ -129,6 +130,7 @@ pub struct Agreement {
 | `open_dispute` | `agreement_id: u64, caller: Address` | Sponsor or Provider | Opens dispute during dispute window |
 | `settle` | `agreement_id: u64` | Anyone (Permissionless) | Disburses settlement amount to provider and refunds surplus to sponsor after dispute window |
 | `resolve_dispute` | `agreement_id: u64, resolution: DisputeResolution` | Admin | Adjudicates dispute (Resume, Settle with surplus refund, Refund) |
+| `transfer_admin` | `new_admin: Address` | Current admin and `new_admin` | Replaces the admin; changes no agreement or balance (source only; not in the deployed Testnet contract) |
 
 ### Errors (`AgreementError`)
 

@@ -49,6 +49,7 @@ The trait `ProviderRegistryTrait` specifies all callable endpoints:
 ### Initialization and Administration
 - `initialize(admin: Address)`: Assigns the contract administrator. Callable only once.
 - `get_admin() -> Result<Address, RegistryError>`: Returns the current admin address.
+- `transfer_admin(new_admin: Address)`: Replaces the admin. Requires authorization from both the current admin and `new_admin`; the previous admin loses all admin-only calls, and registry records are unchanged. Present in the current source and tested locally; the deployed Testnet registry predates it. It does not recover a lost admin key.
 
 ### Provider Lifecycle Management
 - `register_provider(provider: Address, provider_ref: BytesN<32>)`: Onboards a new clinic with status `Active`. Requires admin authorization.
