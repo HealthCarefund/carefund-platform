@@ -296,16 +296,8 @@ func (r *Runner) AcknowledgeEventRetentionGap(ctx context.Context) error {
 	if oldest == 0 {
 		oldest = 1
 	}
-
-	now := time.Now().UTC()
-	rec.AcknowledgedAt = &now
-	rec.ResumedAtLedger = oldest
-	b, err := json.Marshal(rec)
-	if err != nil {
-		return fmt.Errorf("encoding gap acknowledgement: %w", err)
-	}
-	if err := r.store.AcknowledgeReconciliationGap(ctx, eventGapKey, eventCursorKey, raw, currentCursor, strconv.FormatUint(uint64(oldest), 10), string(b)); err != nil {
-		return fmt.Errorf("atomically recording gap acknowledgement: %w", err)
+	if err := r.acknowledgeEventRetentionGapLocked(ctx, raw, currentCursor, oldest, nil); err != nil {
+		return err
 	}
 
 	r.logger.Warn("reconcile: operator acknowledged RPC retention gap; resuming from oldest retained ledger - events in the gap are NOT recovered", "resumedAtLedger", oldest)
