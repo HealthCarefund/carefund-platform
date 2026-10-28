@@ -6,6 +6,7 @@
 //! Owns the actor lifecycle: registration, suspension, reinstatement, and revocation.
 
 mod test;
+mod test_admin_rotation;
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
@@ -156,6 +157,38 @@ impl ProviderRegistryContract {
             .instance()
             .get(&DataKey::Admin)
             .ok_or(RegistryError::Unauthorized)
+    }
+
+    /// Replace the admin. Requires authorization from BOTH the current admin
+    /// and `new_admin`, so a role cannot be handed to an address that has
+    /// not agreed to hold it. The change is atomic: if either authorization
+    /// is missing the call fails and the current admin is unchanged.
+    ///
+    /// Only the admin address is replaced. No agreement, registry record,
+    /// balance or other state is read or modified. Passing the current admin
+    /// as `new_admin` is an authorized no-op.
+    pub fn transfer_admin(env: Env, new_admin: Address) -> Result<(), RegistryError> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(RegistryError::Unauthorized)?;
+        admin.require_auth();
+
+        if new_admin == admin {
+            return Ok(());
+        }
+        new_admin.require_auth();
+
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+
+        env.events()
+            .publish((symbol_short!("adm_rot"),), (admin, new_admin));
+
+        Ok(())
     }
 
     /// Check if a provider exists and is currently Active.

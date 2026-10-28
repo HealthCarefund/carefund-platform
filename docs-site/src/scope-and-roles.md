@@ -12,6 +12,7 @@ The administrator represents the governing entity or protocol deployer.
   - Updates provider statuses (Active, Suspended, Revoked).
   - Registers authorized attesters linked to specific providers.
   - Adjudicates and resolves disputed agreements (`resolve_dispute`).
+  - Can hand the role to a new address with `transfer_admin`, which needs both the current and the incoming admin to sign (source only; not in the deployed contracts). The two contracts have separate admins. A lost admin key cannot be replaced this way.
 - **Authorization**: Protected on-chain by `admin.require_auth()`.
 
 ### 2. Healthcare Sponsor (`Sponsor`)

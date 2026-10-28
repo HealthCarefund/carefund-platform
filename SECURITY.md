@@ -135,6 +135,12 @@ ready or audited on the strength of this document.
 
 ## Known limitations
 
+- Each contract has one admin. The current source adds `transfer_admin`
+  (needs the current and the incoming admin to sign), but the deployed
+  Testnet contracts predate it, and it cannot recover a lost admin key.
+  A `Disputed` agreement has no timeout, so a lost care-agreement admin
+  key leaves its disputed funds locked. See
+  `docs/dispute-recovery-proposal.md`.
 - No admin authentication exists in `apps/api` or `apps/web`;
   `resolve_dispute` has no application interface for this reason.
 - `apps/api` has no per-caller rate limiting.

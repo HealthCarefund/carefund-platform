@@ -36,7 +36,7 @@ If no attestation is made by `care_deadline`, the agreement stays `Funded`. Afte
 
 Yes, in these cases:
 
-- An agreement in `Disputed` stays that way until the admin resolves it. The admin key cannot be rotated, so a lost key locks those funds.
+- An agreement in `Disputed` stays that way until the admin resolves it. A lost key locks those funds. The current source adds `transfer_admin`, which lets a working admin hand the role over, but it needs the current admin's signature, so it does not help after a loss, and it is not in the deployed Testnet contracts.
 - Tokens sent directly to the contract address cannot be recovered; there is no sweep.
 - For non-native assets, a payout could fail if a trustline is missing or an issuer freezes or claws back. This is reasoning from Stellar asset rules, not tested here.
 
@@ -86,7 +86,7 @@ Working and evidenced:
 
 Planned, not implemented (open GitHub issues #21 to #28): provider discovery for sponsor intents, reconciliation metrics, dead-letter handling, an authenticated admin workflow for dispute resolution, SDK retry helpers, a manual accessibility review, passkey signing, and an interactive playground.
 
-Not planned or not addressed anywhere: a dispute timeout, admin key rotation, rechecking attester status after creation, milestones, and multi-attester thresholds (the last is listed as post-approval ideas in [ROADMAP.md](../ROADMAP.md)).
+Not planned or not addressed anywhere: a dispute timeout or lost-key recovery (admin rotation exists in source only; see [the recovery proposal](../docs/dispute-recovery-proposal.md)), rechecking attester status after creation, milestones, and multi-attester thresholds (the last is listed as post-approval ideas in [ROADMAP.md](../ROADMAP.md)).
 
 ## Is there a demo video?
 

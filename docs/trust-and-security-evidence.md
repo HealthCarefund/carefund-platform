@@ -66,7 +66,9 @@ This is the central limit of the design: CareFund moves money based on who signe
 | care-agreement | `initialize` | Sets admin, registry address, settlement asset once | One time |
 | care-agreement | `resolve_dispute` | `Resume`, `Settle` or `Refund` a `Disputed` agreement | Funds go only to the agreement's provider or sponsor |
 
-Absent: admin transfer or rotation, pause, upgrade, sweep, change of settlement asset, change of registry address, change of any agreement field.
+Also in the current source: `transfer_admin` on both contracts, which needs a signature from the current admin and from the incoming admin and changes only the admin address. `transfer_admin` is in the source and tested locally only. It is not in the deployed Testnet contracts (care_agreement WASM `b543e9a7...`, provider_registry WASM `30924b09...`), which have no admin rotation, so the deployed admins cannot use it.
+
+Absent: pause, upgrade, sweep, change of settlement asset, change of registry address, change of any agreement field, and any way to recover a lost admin key.
 
 ## 6. How disputes are authorized and resolved
 
@@ -82,14 +84,14 @@ Listed with where each is shown. For funding `F` and settlement `S`:
 
 | Invariant | Source | Tests | Testnet evidence |
 |---|---|---|---|
-| `0 < S <= F` at creation | `lib.rs:334-339` | `test_create_agreement_invalid_amounts`, `test_security_invalid_amount_parameters_rejected` | n/a |
-| Settlement pays `S` to provider and `F - S` to sponsor; per-agreement liability returns to 0 | `lib.rs:866-898` | `test_red_b3_surplus_retained_in_contract_after_settlement`, `test_per_agreement_conservation_vs_aggregate_contract_balance` | Agreement 1 (`9ae6dc48...`): 30,000,000 to provider, 20,000,000 to sponsor, contract balance 0 |
-| Funded expiry refunds the full `F` | `lib.rs:626-648` | `test_red_b1_expire_locks_deposited_escrow` | Agreement 3 (`4d1b15c0...`): 20,000,000 refunded |
-| Dispute `Refund` returns `F`; `Settle` splits as above | `lib.rs:976-1025` | `test_resolve_dispute_refund_success`, `test_resolve_dispute_settle_success` | Agreement 4 (`55bfa433...`): 15,000,000 refunded |
+| `0 < S <= F` at creation | `lib.rs:367-372` | `test_create_agreement_invalid_amounts`, `test_security_invalid_amount_parameters_rejected` | n/a |
+| Settlement pays `S` to provider and `F - S` to sponsor; per-agreement liability returns to 0 | `lib.rs:899-931` | `test_red_b3_surplus_retained_in_contract_after_settlement`, `test_per_agreement_conservation_vs_aggregate_contract_balance` | Agreement 1 (`9ae6dc48...`): 30,000,000 to provider, 20,000,000 to sponsor, contract balance 0 |
+| Funded expiry refunds the full `F` | `lib.rs:659-681` | `test_red_b1_expire_locks_deposited_escrow` | Agreement 3 (`4d1b15c0...`): 20,000,000 refunded |
+| Dispute `Refund` returns `F`; `Settle` splits as above | `lib.rs:1009-1058` | `test_resolve_dispute_refund_success`, `test_resolve_dispute_settle_success` | Agreement 4 (`55bfa433...`): 15,000,000 refunded |
 | Agreements do not draw on each other's deposits | Per-agreement stored amounts | `test_cross_contract_multi_agreement_token_balance_lifecycle` | Agreements 3 and 4 funded together: 35,000,000 held, 20,000,000 out, 15,000,000 left, then 0 |
-| Surplus uses checked subtraction | `lib.rs:881-884`, `:990-993` | covered by the settlement tests above | n/a |
-| `care_deadline + window` cannot overflow | `lib.rs:356` | `test_create_agreement_dispute_window_overflow_rejected` | Fixed WASM deployed in Block 3B |
-| Attested care cannot be expired | `lib.rs:650-652` | `test_red_b2_unauthorized_party_preempts_attested_settlement` | Agreement 1: expire on `CareConfirmed` returned `Error(Contract, #4)` in simulation |
+| Surplus uses checked subtraction | `lib.rs:914-917`, `:1023-1026` | covered by the settlement tests above | n/a |
+| `care_deadline + window` cannot overflow | `lib.rs:389` | `test_create_agreement_dispute_window_overflow_rejected` | Fixed WASM deployed in Block 3B |
+| Attested care cannot be expired | `lib.rs:683-685` | `test_red_b2_unauthorized_party_preempts_attested_settlement` | Agreement 1: expire on `CareConfirmed` returned `Error(Contract, #4)` in simulation |
 
 Caveat: the pooled balance can exceed the sum of open escrows if someone sends tokens to the contract directly, and there is no way to recover them.
 
@@ -135,7 +137,7 @@ Caveat: the pooled balance can exceed the sum of open escrows if someone sends t
 ## 12. Known unresolved security risks
 
 1. Attester status is checked at creation and, in the current source, at attestation (tested locally by `test_attester_authorization.rs`). It is not rechecked after an attestation is accepted, and provider status is not checked at attestation, `settle` or `expire`. The deployed Testnet contract predates the attestation-time check, so live agreements still allow a revoked attester to attest. Revoking the designated attester leaves the agreement unattestable with no replacement mechanism; the sponsor refund path remains through `expire` after the deadlines unless a dispute is open.
-2. Open disputes can lock funds indefinitely; the admin key cannot be rotated.
+2. Open disputes can lock funds indefinitely. `transfer_admin` (source only) allows a planned handover but not recovery from a lost key, because it needs the current admin's signature. The deployed contracts have no rotation at all. See [dispute-recovery-proposal.md](./dispute-recovery-proposal.md).
 3. A dishonest or compromised attester can trigger payment for undelivered care unless the sponsor disputes in time.
 4. The admin alone decides disputes.
 5. No independence check between attester, provider and sponsor addresses.
@@ -152,28 +154,29 @@ Evidence status uses the ledger's vocabulary: VERIFIED LIVE means a Testnet tran
 
 | Guarantee | Implementation | Tests | Testnet evidence | Status |
 |---|---|---|---|---|
-| Only the named sponsor can fund | `fund`, `lib.rs:462,478` | `test_fund_agreement_wrong_sponsor_rejected`, `test_security_unauthorized_funder_rejected` | Agreement #8 funding signed by sponsor wallet in Freighter (`d2197fb8...`) | VERIFIED LIVE, TESTED LOCALLY |
-| Only the named attester can attest | `attest_care`, `:682,698` | `test_attest_care_wrong_attester_rejected`, `test_security_unauthorized_attester_rejected` | Agreement #8 attestation by attester wallet (`019fc50f...`) | VERIFIED LIVE, TESTED LOCALLY |
+| Only the named sponsor can fund | `fund`, `lib.rs:495,511` | `test_fund_agreement_wrong_sponsor_rejected`, `test_security_unauthorized_funder_rejected` | Agreement #8 funding signed by sponsor wallet in Freighter (`d2197fb8...`) | VERIFIED LIVE, TESTED LOCALLY |
+| Only the named attester can attest | `attest_care`, `:715,731` | `test_attest_care_wrong_attester_rejected`, `test_security_unauthorized_attester_rejected` | Agreement #8 attestation by attester wallet (`019fc50f...`) | VERIFIED LIVE, TESTED LOCALLY |
 | Attester must be `Active` and bound to the agreement's provider when attesting (source only; not in the Testnet deployment) | `attest_care` and `attester_is_currently_authorized` in `lib.rs` | `suspended_attester_cannot_attest_existing_funded_agreement`, `revoked_attester_cannot_attest_existing_funded_agreement`, `reinstated_attester_can_attest_again_before_care_deadline`, `revoked_attester_cannot_be_reinstated_and_stays_blocked`, `registry_that_cannot_return_an_attester_record_fails_closed` | Not deployed | TESTED LOCALLY |
-| Attester must be bound to an `Active` provider at creation | `create_agreement`, `:373-387`; registry `check_attester`, `:183` | `test_cross_contract_mismatched_provider_attester_rejected`, `test_cross_contract_attester_revocation_blocks_agreement_creation`, registry `test_check_attester_wrong_provider` | `check_attester` returned true for the registered pair (section 4) | VERIFIED LIVE (positive case), TESTED LOCALLY |
-| Provider must be `Active` to create and to fund | `:360-370`, `:489-504` | `test_create_agreement_inactive_provider_rejected`, `test_fund_agreement_inactive_provider_rejected` | Not exercised live | TESTED LOCALLY |
-| Attestation only before care deadline | `:704` | `test_security_attestation_after_care_deadline_rejected` | Not exercised live | TESTED LOCALLY |
-| Dispute only inside the window | `:787-792` | `test_open_dispute_before_dispute_window_rejected`, `test_open_dispute_after_dispute_window_rejected`, `test_security_dispute_timing_boundaries` | Agreement 4 dispute opened (`cd290e0d...`); 2026-09-27 simulation rejected early dispute with `#12` | VERIFIED LIVE, TESTED LOCALLY |
+| Attester must be bound to an `Active` provider at creation | `create_agreement`, `:406-420`; registry `check_attester`, `:216` | `test_cross_contract_mismatched_provider_attester_rejected`, `test_cross_contract_attester_revocation_blocks_agreement_creation`, registry `test_check_attester_wrong_provider` | `check_attester` returned true for the registered pair (section 4) | VERIFIED LIVE (positive case), TESTED LOCALLY |
+| Provider must be `Active` to create and to fund | `:393-403`, `:522-537` | `test_create_agreement_inactive_provider_rejected`, `test_fund_agreement_inactive_provider_rejected` | Not exercised live | TESTED LOCALLY |
+| Attestation only before care deadline | `:737` | `test_security_attestation_after_care_deadline_rejected` | Not exercised live | TESTED LOCALLY |
+| Dispute only inside the window | `:820-825` | `test_open_dispute_before_dispute_window_rejected`, `test_open_dispute_after_dispute_window_rejected`, `test_security_dispute_timing_boundaries` | Agreement 4 dispute opened (`cd290e0d...`); 2026-09-27 simulation rejected early dispute with `#12` | VERIFIED LIVE, TESTED LOCALLY |
 | Settlement is permissionless | `settle`, no `require_auth` | `test_settle_agreement_permissionless_does_not_require_sponsor_auth`, `test_security_settlement_is_permissionless_after_dispute_window` | Agreement #8 settled by third-party account `GDBPGGUE...` (`b7494722...`); Agreement 1 by `carefund-outsider` (`9ae6dc48...`) | VERIFIED LIVE, TESTED LOCALLY |
-| Exact provider payment and surplus refund | `:866-898` | `test_settle_agreement_success`, `test_per_agreement_conservation_vs_aggregate_contract_balance` | Agreement #8: 8,000,000 to provider, 2,000,000 to sponsor; Agreement 1: 30,000,000 and 20,000,000 | VERIFIED LIVE, TESTED LOCALLY |
-| Settlement blocked inside the dispute window | `:850-855` | `test_red_b4_settlement_races_and_abbreviates_dispute_window`, `test_settle_agreement_before_deadline_rejected` | Agreement 1 simulations `#11`, `#12` | VERIFIED LIVE, TESTED LOCALLY |
-| No double settlement | state check, `:839` | `test_security_double_settlement_rejected` | Agreement 1 second settle `#4` (simulation) | VERIFIED LIVE, TESTED LOCALLY |
-| Funded expiry gives a full refund | `:613-649` | `test_red_b1_expire_locks_deposited_escrow`, `test_expire_agreement_from_funded_success` | Agreement 3 (`4d1b15c0...`), 20,000,000 refunded | VERIFIED LIVE, TESTED LOCALLY |
-| Unfunded agreement expires only after the funding deadline | `:608` | `test_funding_deadline_exact_boundary_cannot_expire_but_can_fund`, `test_funding_deadline_past_boundary_cannot_fund_but_can_expire` | Agreement 2: early expire `#9`, later expire (`80b818da...`) | VERIFIED LIVE, TESTED LOCALLY |
-| Attested care cannot be expired | `:650-652` | `test_red_b2_unauthorized_party_preempts_attested_settlement` | Agreement 1 `#4` (simulation) | VERIFIED LIVE, TESTED LOCALLY |
-| Only admin resolves disputes | `:929-935` | `test_resolve_dispute_unauthorized_fails` | Agreement 4 non-admin resolve `#2` (simulation); admin refund (`55bfa433...`) | VERIFIED LIVE, TESTED LOCALLY |
+| Exact provider payment and surplus refund | `:899-931` | `test_settle_agreement_success`, `test_per_agreement_conservation_vs_aggregate_contract_balance` | Agreement #8: 8,000,000 to provider, 2,000,000 to sponsor; Agreement 1: 30,000,000 and 20,000,000 | VERIFIED LIVE, TESTED LOCALLY |
+| Settlement blocked inside the dispute window | `:883-888` | `test_red_b4_settlement_races_and_abbreviates_dispute_window`, `test_settle_agreement_before_deadline_rejected` | Agreement 1 simulations `#11`, `#12` | VERIFIED LIVE, TESTED LOCALLY |
+| No double settlement | state check, `:872` | `test_security_double_settlement_rejected` | Agreement 1 second settle `#4` (simulation) | VERIFIED LIVE, TESTED LOCALLY |
+| Funded expiry gives a full refund | `:646-682` | `test_red_b1_expire_locks_deposited_escrow`, `test_expire_agreement_from_funded_success` | Agreement 3 (`4d1b15c0...`), 20,000,000 refunded | VERIFIED LIVE, TESTED LOCALLY |
+| Unfunded agreement expires only after the funding deadline | `:641` | `test_funding_deadline_exact_boundary_cannot_expire_but_can_fund`, `test_funding_deadline_past_boundary_cannot_fund_but_can_expire` | Agreement 2: early expire `#9`, later expire (`80b818da...`) | VERIFIED LIVE, TESTED LOCALLY |
+| Attested care cannot be expired | `:683-685` | `test_red_b2_unauthorized_party_preempts_attested_settlement` | Agreement 1 `#4` (simulation) | VERIFIED LIVE, TESTED LOCALLY |
+| Only admin resolves disputes | `:962-968` | `test_resolve_dispute_unauthorized_fails` | Agreement 4 non-admin resolve `#2` (simulation); admin refund (`55bfa433...`) | VERIFIED LIVE, TESTED LOCALLY |
 | Disputed agreement cannot be settled or expired | state checks | `test_resolve_dispute_invalid_state_rejected`, `test_expire_agreement_invalid_state_rejected` | Agreement 4: settle `#4`, expire `#4` (simulation) | VERIFIED LIVE, TESTED LOCALLY |
-| Admin cannot choose destinations or amounts | `:960-1025`: transfer targets are `agreement.provider` and `agreement.sponsor`, amounts are stored fields | `test_resolve_dispute_settle_success`, `test_resolve_dispute_refund_success` | Agreement 4 | LOGICALLY COVERED, TESTED LOCALLY |
+| Admin cannot choose destinations or amounts | `:993-1058`: transfer targets are `agreement.provider` and `agreement.sponsor`, amounts are stored fields | `test_resolve_dispute_settle_success`, `test_resolve_dispute_refund_success` | Agreement 4 | LOGICALLY COVERED, TESTED LOCALLY |
 | Escrow accounting per agreement | stored amounts, no balance reads | `test_cross_contract_multi_agreement_token_balance_lifecycle` | Agreements 3 and 4 pooled | VERIFIED LIVE, TESTED LOCALLY |
 | Wallet is the only signer | API and web hold no keys | `apps/web/lib/transaction-rejection.test.ts` | Freighter rejection observed, no hash generated (section 8.1) | VERIFIED (live observation), TESTED LOCALLY |
 | Mirror recovers from missed ingestion | `apps/api/internal/reconcile/events.go` | `runner_test.go`, `events_test.go` | Agreement #7 replay from ledger 5106190 (section 8.2) | VERIFIED |
 | API idempotency | `apps/api/internal/api/idempotency.go` | `idempotency_test.go` | n/a | TESTED LOCALLY |
-| Admin cannot rotate, pause or upgrade | no such functions exist | n/a | n/a | LOGICALLY COVERED (search of both `lib.rs` files) |
+| Admin cannot pause or upgrade | no such functions exist | n/a | n/a | LOGICALLY COVERED (search of both `lib.rs` files) |
+| Admin rotation needs both the current and the incoming admin | `transfer_admin` in both contracts | `test_admin_rotation.rs` in each contract (targeted `mock_auths`, not `mock_all_auths`) | Not deployed | TESTED LOCALLY |
 
 Not in the matrix because no evidence exists: independent audit, attester truthfulness, privacy of commitments, behavior with non-native assets, and a live archival-restore run.
 
