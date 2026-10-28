@@ -1,6 +1,6 @@
 # Provider and Attester Registry
 
-The `provider-registry` contract (`contracts/provider-registry`) serves as the foundational trust root for healthcare participants in CareFund. It maintains verifiable credentials and accreditation statuses for clinics and independent attesters.
+The `provider-registry` contract (`contracts/provider-registry`) serves as the foundational trust root for healthcare participants in CareFund. It maintains the administrator's record of which clinics and attesters are authorized, with a status for each. It stores opaque credential references and does not verify real-world accreditation.
 
 ## Core Concepts
 
@@ -31,7 +31,7 @@ pub struct ProviderRecord {
 ```
 
 #### Attester Record
-An attester represents an authorized verification officer bound directly to an authorized provider:
+An attester represents an address the administrator has authorized and bound directly to a provider:
 ```rust
 pub struct AttesterRecord {
     pub provider: Address,        // Associated provider organization
@@ -51,16 +51,16 @@ The trait `ProviderRegistryTrait` specifies all callable endpoints:
 - `get_admin() -> Result<Address, RegistryError>`: Returns the current admin address.
 
 ### Provider Lifecycle Management
-- `register_provider(admin: Address, provider: Address, provider_ref: BytesN<32>)`: Onboards a new clinic with status `Active`. Requires admin authorization.
-- `suspend_provider(admin: Address, provider: Address)`: Transitions status from `Active` to `Suspended`.
-- `reinstate_provider(admin: Address, provider: Address)`: Restores a `Suspended` provider back to `Active`.
-- `revoke_provider(admin: Address, provider: Address)`: Permanently sets status to `Revoked`.
+- `register_provider(provider: Address, provider_ref: BytesN<32>)`: Onboards a new clinic with status `Active`. Requires admin authorization.
+- `suspend_provider(provider: Address)`: Transitions status from `Active` to `Suspended`.
+- `reinstate_provider(provider: Address)`: Restores a `Suspended` provider back to `Active`.
+- `revoke_provider(provider: Address)`: Permanently sets status to `Revoked`.
 
 ### Attester Lifecycle Management
-- `register_attester(admin: Address, attester: Address, provider: Address, credential_ref: BytesN<32>)`: Links an attester to a specified provider. Requires admin authorization. The target provider must be currently `Active`.
-- `suspend_attester(admin: Address, attester: Address)`: Temporarily suspends attestation privileges.
-- `reinstate_attester(admin: Address, attester: Address)`: Restores attester privileges if the parent provider is `Active`.
-- `revoke_attester(admin: Address, attester: Address)`: Permanently revokes attester privileges.
+- `register_attester(attester: Address, provider: Address, credential_ref: BytesN<32>)`: Links an attester to a specified provider. Requires admin authorization. The target provider must be currently `Active`.
+- `suspend_attester(attester: Address)`: Temporarily suspends attestation privileges.
+- `reinstate_attester(attester: Address)`: Restores attester privileges. (The function itself does not check the parent provider; `check_attester` does at query time.)
+- `revoke_attester(attester: Address)`: Permanently revokes attester privileges.
 
 ### Verification Queries
 - `is_provider_active(provider: Address) -> bool`: Read-only helper returning `true` if the provider exists and is `Active`.
@@ -72,7 +72,7 @@ The trait `ProviderRegistryTrait` specifies all callable endpoints:
 
 ## Cross-Contract Interaction
 
-When `care-agreement` executes `create_agreement` or `fund`, it invokes `is_provider_active` and `check_attester` as real cross-contract calls:
+`care-agreement` invokes the registry as real cross-contract calls: `create_agreement` calls `is_provider_active` and `check_attester`, and `fund` calls `is_provider_active`. `attest_care`, `settle` and `expire` do not call the registry, so suspending or revoking an actor does not change agreements that already exist.
 - If a provider is suspended between agreement proposal and funding, the agreement cannot be funded.
 - If an attester is revoked or not bound to the provider, agreement creation fails immediately with `AttesterNotAuthorized`.
 

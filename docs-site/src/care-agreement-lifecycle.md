@@ -45,7 +45,7 @@ The `care-agreement` contract (`contracts/care-agreement`) orchestrates the cond
 |---|---|---|
 | `Requested` | Agreement terms defined, awaiting sponsor deposit | 0 |
 | `Funded` | Sponsor tokens escrowed in contract; clinic delivers care | Equal to `funding_amount` |
-| `CareConfirmed` | Attester recorded verified care delivery hash | Equal to `funding_amount` |
+| `CareConfirmed` | Attester recorded an attestation commitment (an authorized statement; not independently verified) | Equal to `funding_amount` |
 | `Settled` | Escrow paid out to provider; surplus refunded to sponsor | 0 |
 | `Cancelled` | Provider cancelled un-funded proposal; terminal state | 0 |
 | `Expired` | Deadline lapsed without required action; terminal state | 0 (refunded to sponsor if funded) |
@@ -57,17 +57,17 @@ The `care-agreement` contract (`contracts/care-agreement`) orchestrates the cond
 ## Detailed Step-by-Step Flow
 
 ### 1. Agreement Creation (`create_agreement`)
-A sponsor or provider defines the contract parameters:
+The provider (`provider.require_auth()`) defines the contract parameters, naming the sponsor and attester:
 - `sponsor`: Funder Stellar account.
 - `provider`: Healthcare provider Stellar account.
-- `attester`: Designated neutral attester account.
+- `attester`: Attester account bound to the provider in `provider-registry`.
 - `patient_ref_commitment`: 32-byte hash identifying the patient.
 - `service_commitment`: 32-byte hash identifying planned procedure.
 - `funding_amount`: Total token amount required from sponsor.
 - `settlement_amount`: Amount to be disbursed to provider on completion.
 - `funding_deadline`: Unix timestamp by which deposit must occur.
 - `care_deadline`: Unix timestamp by which care must be delivered and attested.
-- `dispute_window_secs`: Grace window (in seconds) for objections.
+- `dispute_window_secs`: Length (in seconds) of the dispute window. The window opens at `care_deadline` (not at attestation) and closes `dispute_window_secs` later.
 
 **Validations Enforced**:
 - Provider must be `Active` in `provider-registry`.
@@ -102,5 +102,5 @@ A sponsor or provider defines the contract parameters:
 - **`cancel`**: Provider can cancel an un-funded `Requested` agreement.
 - **`expire`**: Anyone can trigger expiration if deadlines lapse:
   - If in `Requested` after `funding_deadline` (`now > funding_deadline`): state becomes `Expired` with zero token transfers. At `now == funding_deadline`, funding is permitted and expiry is rejected with `FundingDeadlineNotReached`.
-  - If in `Funded` after `care_deadline + dispute_window_secs` without attestation: state becomes `Expired` and the full deposited escrow is automatically refunded to sponsor.
+  - If in `Funded` after `care_deadline + dispute_window_secs` without attestation: state becomes `Expired` and the full deposited escrow is refunded to the sponsor in that same transaction (anyone can call `expire`; a `Disputed` agreement cannot use this path).
   - Agreements in `CareConfirmed` cannot be expired (`InvalidState`).

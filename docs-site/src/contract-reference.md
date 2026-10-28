@@ -41,14 +41,14 @@ pub struct AttesterRecord {
 |---|---|---|---|
 | `initialize` | `admin: Address` | None (one-time) | Initializes registry with admin |
 | `get_admin` | None | None | Returns admin address |
-| `register_provider` | `admin: Address, provider: Address, provider_ref: BytesN<32>` | Admin | Registers new provider as Active |
-| `suspend_provider` | `admin: Address, provider: Address` | Admin | Sets provider status to Suspended |
-| `reinstate_provider` | `admin: Address, provider: Address` | Admin | Sets provider status back to Active |
-| `revoke_provider` | `admin: Address, provider: Address` | Admin | Permanently sets status to Revoked |
-| `register_attester` | `admin: Address, attester: Address, provider: Address, credential_ref: BytesN<32>` | Admin | Registers attester for an active provider |
-| `suspend_attester` | `admin: Address, attester: Address` | Admin | Sets attester status to Suspended |
-| `reinstate_attester` | `admin: Address, attester: Address` | Admin | Sets attester status back to Active |
-| `revoke_attester` | `admin: Address, attester: Address` | Admin | Permanently sets attester to Revoked |
+| `register_provider` | `provider: Address, provider_ref: BytesN<32>` | Admin | Registers new provider as Active |
+| `suspend_provider` | `provider: Address` | Admin | Sets provider status to Suspended |
+| `reinstate_provider` | `provider: Address` | Admin | Sets provider status back to Active |
+| `revoke_provider` | `provider: Address` | Admin | Permanently sets status to Revoked |
+| `register_attester` | `attester: Address, provider: Address, credential_ref: BytesN<32>` | Admin | Registers attester for an active provider |
+| `suspend_attester` | `attester: Address` | Admin | Sets attester status to Suspended |
+| `reinstate_attester` | `attester: Address` | Admin | Sets attester status back to Active |
+| `revoke_attester` | `attester: Address` | Admin | Permanently sets attester to Revoked |
 | `is_provider_active` | `provider: Address` | Read-only | Returns boolean active status |
 | `check_attester` | `attester: Address, provider: Address` | Read-only | Returns boolean authorization |
 
@@ -120,12 +120,12 @@ pub struct Agreement {
 | Function | Parameters | Authorization | Description |
 |---|---|---|---|
 | `initialize` | `admin, provider_registry, settlement_asset` | None (one-time) | Initializes agreement contract |
-| `create_agreement` | Eleven agreement arguments | Sponsor or Provider | Creates new care agreement in Requested state |
+| `create_agreement` | Eleven agreement arguments | Provider | Creates new care agreement in Requested state |
 | `get_agreement` | `agreement_id: u64` | Read-only | Fetches complete agreement record |
 | `fund` | `agreement_id: u64, sponsor: Address` | Sponsor | Transfers funding amount into contract escrow |
 | `cancel` | `agreement_id: u64, provider: Address` | Provider | Cancels an un-funded agreement |
 | `expire` | `agreement_id: u64` | Anyone (Permissionless) | Expires Requested (past funding deadline) or Funded (past care deadline plus dispute window, refunding sponsor) |
-| `attest_care` | `agreement_id: u64, attester: Address, attestation_commitment: BytesN<32>` | Attester | Submits verified care delivery hash |
+| `attest_care` | `agreement_id: u64, attester: Address, attestation_commitment: BytesN<32>` | Attester | Records an attestation commitment (not verified by the contract) |
 | `open_dispute` | `agreement_id: u64, caller: Address` | Sponsor or Provider | Opens dispute during dispute window |
 | `settle` | `agreement_id: u64` | Anyone (Permissionless) | Disburses settlement amount to provider and refunds surplus to sponsor after dispute window |
 | `resolve_dispute` | `agreement_id: u64, resolution: DisputeResolution` | Admin | Adjudicates dispute (Resume, Settle with surplus refund, Refund) |

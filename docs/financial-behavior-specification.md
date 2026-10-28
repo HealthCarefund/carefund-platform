@@ -28,7 +28,7 @@ For every agreement initialized with `funding_amount = F` and `settlement_amount
 | Current State | Target State | Trigger Function | Authorized Caller | Time Condition | Token Movement (Atomic) | Residual Balance (Per Agreement) | Default / Timeout Behavior |
 |---|---|---|---|---|---|---|---|
 | `None` | `Requested` | `create_agreement` | `provider` | `now < funding_deadline` | None | 0 | Can be cancelled by provider or expire after deadline |
-| `Requested` | `Cancelled` | `cancel` | `provider` | `now < funding_deadline` | None | 0 | Terminal state |
+| `Requested` | `Cancelled` | `cancel` | `provider` | None (any time while `Requested`) | None | 0 | Terminal state |
 | `Requested` | `Expired` | `expire` | Anyone | `now > funding_deadline` | None | 0 | At `now == funding_deadline`, funding is permitted and expiry is rejected (`FundingDeadlineNotReached`) |
 | `Requested` | `Funded` | `fund` | `sponsor` | `now <= funding_deadline` | Sponsor -> Contract: `F` | `F` | If not funded before or at deadline, transitions to Expired |
 | `Funded` | `CareConfirmed` | `attest_care` | `attester` | `now <= care_deadline` | None | `F` | If not attested before deadline, eligible for refund |

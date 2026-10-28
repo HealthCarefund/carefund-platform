@@ -70,10 +70,13 @@ Provider registration, suspension, reinstatement, and revocation, and
 attester registration and status changes, are all admin only calls on
 `contracts/provider-registry`, enforced by that contract's own
 `require_auth()`, not by `apps/api`. `contracts/care-agreement` checks a
-provider's active status and an attester's authorization for that
-provider through real cross contract calls into the registry at
-`create_agreement` and `fund` time, not through any value the caller
-supplies about themselves.
+provider's active status (at `create_agreement` and `fund`) and an
+attester's authorization for that provider (at `create_agreement`
+only) through real cross contract calls into the registry, not through
+any value the caller supplies about themselves. `attest_care`, `settle`
+and `expire` do not consult the registry, so a later suspension or
+revocation does not affect agreements that already exist. See
+`docs/trust-and-security-evidence.md`.
 
 ## Data privacy
 
@@ -148,7 +151,7 @@ In Block 3A and the pre-deployment hardening pass, the protocol established and 
 - **Dispute Window Non-Overlap**: Settlement is strictly prohibited while the dispute window remains active, preventing race conditions against dispute filings.
 - **Permissionless Finalization**: Settlement parameters are immutable on-chain; any caller may trigger settlement once the dispute window elapses, preventing counterparty settlement veto.
 - **Strict Funding Boundary Timing**: Expiration of an un-funded agreement is strictly permitted only after the funding deadline has passed (`now > funding_deadline`). At `now == funding_deadline`, funding is permitted and expiry is rejected with `FundingDeadlineNotReached`.
-- **Escrow Refund on Expiration**: Agreements expiring in the Funded state without attestation automatically refund the full deposit back to the sponsor. Agreements with attested care cannot be expired.
+- **Escrow Refund on Expiration**: When an agreement in the Funded state without attestation is expired (anyone can call `expire` after the deadlines), the full deposit is refunded to the sponsor in that transaction; a `Disputed` agreement cannot use this path. Agreements with attested care cannot be expired.
 - **Conserved Dispute Resolution**: Dispute resolution via `Settle` disburses the settlement amount to the provider and refunds surplus to the sponsor; resolution via `Refund` returns the full deposit to the sponsor.
 - **Storage Durability and Archival Restoration**: Agreement entries use persistent storage with proactive TTL extensions. Inactive agreements that become archived after 30 days do not lose custody tokens. Since Stellar Protocol 23, simulation automatically populates the restore list so that contract invocations auto-restore archived entries within InvokeHostFunctionOp, with RestoreFootprintOp available as a standalone fallback.
  

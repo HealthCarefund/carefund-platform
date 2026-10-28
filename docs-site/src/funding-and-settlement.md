@@ -19,7 +19,7 @@ On Stellar Testnet, CareFund binds to the native XLM Stellar Asset Contract:
 - **Contract Address**: `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`
 - **Unit Precision**: 7 decimal places (1 XLM = 10,000,000 stroops)
 
-This design is fully compatible with any regulated asset issued on Stellar (such as fiat-backed stablecoins like USDC) simply by specifying the appropriate SAC address during initialization.
+The contract takes any SAC address at initialization, so other Stellar assets could in principle be configured. Only native XLM has been exercised; behavior with issued assets (trustlines, freezes, clawback) has not been tested.
 
 ---
 

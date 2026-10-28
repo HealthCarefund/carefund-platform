@@ -17,15 +17,40 @@
 <p align="center">
   <a href="docs-site/">Documentation Source</a> |
   <a href="https://healthcarefund.github.io/carefund-platform/">Documentation Book</a> |
+  <a href="ARCHITECTURE.md">Architecture</a> |
+  <a href="docs/differentiation.md">Differentiation</a> |
+  <a href="docs/trust-and-security-evidence.md">Trust and Security</a> |
+  <a href="submission/reviewer-qa.md">Reviewer Q&amp;A</a> |
   <a href="evidence/index.md">Verification Evidence</a> |
   <a href="SECURITY.md">Security Policy</a> |
   <a href="CONTRIBUTING.md">Contributing</a> |
   <a href="ROADMAP.md">Roadmap</a>
 </p>
 
-CareFund coordinates care agreements between healthcare sponsors, medical providers, and independent attesters, holding conditional funding in escrow and executing settlement autonomously through Soroban smart contracts on the Stellar network.
+CareFund coordinates care agreements between healthcare sponsors, medical providers, and administrator-registered attesters, holding conditional funding in escrow and enforcing settlement rules through Soroban smart contracts on the Stellar network. Settlement is permissionless: anyone can submit the `settle` transaction once the contract's conditions are met. CareFund does not technically establish that an attester is independent of the provider or sponsor.
 
 CareFund operates as a funding coordination and verification protocol. CareFund does not custody user signing keys. Users sign with their own wallet, while agreement funds are held temporarily in escrow by the Soroban smart contract under the protocol's conditional release rules. It is not health insurance, an underwriter, an electronic health records system, a patient diagnostic service, or a custodial wallet service.
+
+## Proof at a Glance
+
+**Central flow:** a sponsor funds an agreement, then an authorized attester submits a confirmation, then the contract enforces the timing and dispute conditions, and an eligible settlement pays the provider and refunds any surplus to the sponsor.
+
+**What the attestation means:** the attester is authorized on-chain by the registry, but the protocol does not independently prove the real-world medical claim. A confirmation is a signed statement by an address the administrator registered. It is not verified accreditation or independently established proof that treatment happened. See [Trust and Security](docs/trust-and-security-evidence.md).
+
+Everything below ran on **Stellar Testnet**. Transaction links open the public Stellar Expert Testnet explorer. Full detail is in [evidence/testnet-2026-10-09-block3b.md](evidence/testnet-2026-10-09-block3b.md).
+
+| What was shown | Result | Evidence |
+|---|---|---|
+| **Agreement #8, browser and Freighter lifecycle** (create, fund, attest, settle) | Signed in the browser with the Freighter extension | [fund](https://stellar.expert/explorer/testnet/tx/d2197fb8d30103d126d0c71f7328c12732d57dd92d9156c2534c1417a7ee5e06), [attest](https://stellar.expert/explorer/testnet/tx/019fc50fc867eb7e1b9a71b775f82cbcb4462b16f2369fa2d1409b4ae17619f3), [settle](https://stellar.expert/explorer/testnet/tx/b74947224324d11710d21aac3c36b46684af6fe0a7810aa425f6a841968e73fa) |
+| **Permissionless third-party settlement** | A third-party account that is neither sponsor, provider nor attester called `settle` after the dispute window | [Agreement #8 settle](https://stellar.expert/explorer/testnet/tx/b74947224324d11710d21aac3c36b46684af6fe0a7810aa425f6a841968e73fa), [Agreement 1 settle](https://stellar.expert/explorer/testnet/tx/9ae6dc480e876a32a18e5b0d12ce5a3187010c01ce319d0ac1e035589845285c) |
+| **Exact provider payment and sponsor surplus refund** | Agreement #8: 8,000,000 stroops to the provider, 2,000,000 back to the sponsor, contract liability 0. Agreement 1: 30,000,000 and 20,000,000. Native XLM only | Same two transactions |
+| **Funded agreement expiry with complete refund** | Agreement 3 expired with no attestation; all 20,000,000 stroops returned to the sponsor | [expire](https://stellar.expert/explorer/testnet/tx/4d1b15c0d88c09f08fbcb2f7999281f7071ed03267e2351a80accd7c72839056) |
+| **Dispute resolution** | Agreement 4: dispute opened, then the admin refunded all 15,000,000 stroops to the sponsor (resolved with the Stellar CLI; there is no admin UI) | [open dispute](https://stellar.expert/explorer/testnet/tx/cd290e0df4c46e1e010614a98e0d7bfe3d6abd587240f0763c2f13a8a6eab578), [resolve](https://stellar.expert/explorer/testnet/tx/55bfa433069d4c44e4d40748531e339b0788449f165f250f395b6bff0ccf7972) |
+| **Agreement #7 reconciliation recovery** | The mirror missed Agreement #7, then was repaired by replay from ledger 5106190 without manual SQL | [creation tx](https://stellar.expert/explorer/testnet/tx/a46300429dc1d091a8e722e4b143129121c846a0c8b39dbf4b6ee4411ec1a264), [section 8.2](evidence/testnet-2026-10-09-block3b.md) |
+
+What is not shown: an independent audit, Mainnet, a public web deployment (the app ran on localhost), a demo video (pending), non-XLM assets, or any check that the attested care really happened.
+
+**Reviewer resources:** [ARCHITECTURE.md](ARCHITECTURE.md) | [Differentiation from other Stellar escrow projects](docs/differentiation.md) | [Trust model and security evidence matrix](docs/trust-and-security-evidence.md) | [Reviewer Q&A](submission/reviewer-qa.md) | [Submission pack](submission/submission-pack.md) | [Evidence ledger](evidence/index.md)
 
 ## Why CareFund Exists
 
@@ -35,7 +60,7 @@ Charitable and subsidized healthcare programs frequently confront three systemic
 2. **Provider Cash-Flow Strain**: Requiring clinics to deliver care upfront and wait months for donor reimbursement strains community health operations.
 3. **Privacy Vulnerabilities**: Centralized grant tracking often exposes sensitive patient identities and diagnostic notes to donor auditing staff.
 
-CareFund is designed to reduce these trade-offs by holding donor funds in verifiable smart contract escrow upfront, releasing reimbursement to clinics only when authorized attesters verify clinical completion on-chain, and representing patient and service references through 32-byte cryptographic commitments.
+CareFund is designed to reduce these trade-offs by holding donor funds in verifiable smart contract escrow upfront, releasing reimbursement to clinics only after an authorized attester records a confirmation on-chain and a dispute window passes, and representing patient and service references through 32-byte cryptographic commitments.
 
 ## System Components
 
@@ -65,8 +90,8 @@ apps/
 1. **Provider Onboarding**: The contract administrator registers authorized clinics in `provider-registry` (`register_provider`) and authorizes bound attesters (`register_attester`). The registry records administrative authorization; it does not independently verify external medical accreditation.
 2. **Agreement Proposal**: A registered provider initializes a care agreement (`create_agreement`) specifying token amounts, deadlines, cryptographic commitment hashes, and authorized counterparty addresses. The contract requires provider authorization.
 3. **Escrow Deposit**: The sponsor deposits funds (`fund`) into the `care-agreement` contract via the Stellar Asset Contract (SAC).
-4. **Care Attestation**: Upon procedure completion, the designated attester verifies clinical delivery and submits an attestation hash (`attest_care`).
-5. **Autonomous Settlement**: Once care is attested and the dispute window elapses, settlement (`settle`) is callable deterministically by anyone, transferring reimbursement directly to the provider wallet and refunding any escrow surplus to the sponsor.
+4. **Care Attestation**: The designated attester submits an attestation hash (`attest_care`) no later than the care deadline. This is an authorized on-chain statement. The protocol does not independently verify that the care took place.
+5. **Permissionless Settlement**: Once care is attested and the dispute window (from the care deadline until `dispute_window_secs` after it) elapses, anyone can call `settle`. The contract enforces the rules, but someone must still submit the transaction; there is no scheduler that runs it automatically. When it executes, the provider payment and the sponsor surplus refund happen in that same transaction.
 6. **Disputes and Safeguards**: If disagreements arise, either party can open a dispute (`open_dispute`) during the defined dispute window for administrative resolution (`resolve_dispute`).
 
 ## Local Quickstart
@@ -128,7 +153,7 @@ CareFund documents all claims using a transparent evidence taxonomy in [evidence
 | Toolchain Pinned Versions | VERIFIED | Validated via `scripts/check-toolchain.sh` |
 | Contracts Deployed to Testnet | VERIFIED | Block 3B deployed 2026-10-09 (`evidence/testnet-2026-10-09-block3b.md`); historical Block 1 on 2026-09-27 (`evidence/testnet-2026-09-27.md`) |
 | Full On-Chain Lifecycle | VERIFIED | Multi-agreement matrix: nominal settlement with surplus refund, requested expiry, funded expiry, dispute refund |
-| Negative Path Enforcement | VERIFIED LIVE | 9 invalid lifecycle scenarios simulation-rejected by live contract with exact ScError codes |
+| Negative Path Enforcement | VERIFIED LIVE | 8 invalid lifecycle scenarios itemized in the Block 3B evidence were simulation-rejected by the live contract with exact ScError codes (the evidence summary says nine; the ninth is not itemized) |
 | API Live Testnet Roundtrip | VERIFIED LIVE | `TestPrepareTransaction_FundLiveTestnet` and `TestLookupTransaction_SuccessLiveTestnet` verified against live contract |
 | Database Restart Recovery | VERIFIED LIVE | Background reconciliation worker confirms on-chain transactions and persists cursor across service restart |
 | Continuous Integration | VERIFIED | GitHub Actions workflows passing (Contracts, API, Web including SDK tests, Docs) |

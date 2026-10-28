@@ -13,7 +13,7 @@ CareFund
 
 ## One-line description
 
-CareFund is an open-source conditional funding coordination protocol that holds sponsor capital in Soroban smart-contract escrow on Stellar and releases verified disbursements to registered healthcare providers upon authenticated attestation.
+CareFund is an open-source conditional funding coordination protocol that holds sponsor capital in Soroban smart-contract escrow on Stellar and releases a capped reimbursement to a registered healthcare provider after an authorized attester records a confirmation and a dispute window passes. The confirmation is an authorized on-chain statement, not independent proof that care took place.
 
 ## Problem
 
@@ -25,11 +25,11 @@ CareFund resolves these frictions through deterministic contract escrow and cryp
 
 - **Registered Provider**: Healthcare clinics are registered on-chain with administrative status tracking in `provider-registry`.
 - **Sponsor**: Funders lock capital in contract escrow upfront, eliminating reimbursement uncertainty for clinics.
-- **Authorized Attester**: Independent clinical verification officers bound to providers attest to procedure completion on-chain.
+- **Authorized Attester**: An address the administrator registered and bound to a specific provider. It records an on-chain attestation of procedure completion. The registry records an administrative decision, not verified accreditation, and the contract does not enforce that the attester is independent of the provider or sponsor.
 - **Care Agreement**: State machines defining maximum funding, reimbursement caps, care completion deadlines, and dispute windows.
 - **Soroban Escrow**: Smart contracts custody deposited tokens via the Stellar Asset Contract until release conditions are satisfied.
-- **Attestation**: Authorized attesters submit cryptographic 32-byte commitments confirming procedure completion.
-- **Settlement**: Once care is attested and the dispute window elapses, settlement transfers funds directly to the provider and atomically refunds any unspent escrow surplus back to the sponsor.
+- **Attestation**: The authorized attester submits a 32-byte commitment. The contract records it and the signer; it does not verify what the commitment refers to or that the care happened.
+- **Settlement**: Once care is attested and the dispute window (which opens at `care_deadline` and closes `dispute_window_secs` later) has elapsed, settlement transfers funds directly to the provider and atomically refunds any unspent escrow surplus back to the sponsor.
 - **Disputes and Refunds**: Counterparties can freeze an agreement during the dispute window for administrative adjudication; expired funded agreements execute full escrow refunds to sponsors.
 
 ## Why Stellar
@@ -38,14 +38,16 @@ CareFund relies on fundamental, load-bearing architecture features of the Stella
 
 - **Soroban Authorization**: Native `Address::require_auth()` guarantees cryptographically that only designated counterparties can create agreements, deposit funds, submit attestations, or open disputes.
 - **Deterministic Smart-Contract State**: Soroban's WebAssembly execution environment guarantees verifiable state transitions, checked integer arithmetic, and predictable execution.
-- **Token Escrow via Stellar Asset Contract (SAC)**: Standard stroop-precision balance transfers and custody without custom token wrappers or custodial intermediaries.
+- **Token Escrow via Stellar Asset Contract (SAC)**: Standard stroop-precision balance transfers and custody without custom token wrappers or custodial intermediaries. The demonstrated lifecycle used native XLM; no stablecoin lifecycle has been verified.
 - **Externally Verifiable Transactions**: Every lifecycle step yields immutable, transparent transaction hashes on the public ledger.
 - **Permissionless Final Settlement**: Once the dispute window passes, any external caller can execute settlement, preventing counterparty settlement veto or payout delays.
 
 ## Architecture
 
-- `contracts/provider-registry`: Soroban smart contract managing provider directory and authorized attesters.
-- `contracts/care-agreement`: Soroban smart contract governing agreement state machines, escrow custody, surplus refunds, and settlement.
+- `contracts/provider-registry`: CareFund-owned Soroban contract managing provider directory and authorized attesters.
+- `contracts/care-agreement`: CareFund-owned Soroban contract governing agreement state machines, escrow custody, surplus refunds, and settlement.
+- Native XLM Stellar Asset Contract: network-provided token contract that care-agreement calls. It is not CareFund code.
+- Full system description: [ARCHITECTURE.md](../ARCHITECTURE.md).
 - `apps/api`: Go REST backend providing PostgreSQL off-chain metadata mirror, unsigned transaction preparation, and chain reconciliation loop.
 - `apps/web`: Next.js web application with direct client-side wallet signing across provider, sponsor, and attester roles.
 - `packages/sdk`: TypeScript SDK for transaction simulation, building, signing adapter, and Soroban RPC interaction.
@@ -130,7 +132,14 @@ Extension areas reserved for community contribution following project approval (
 - **Security and Identity Hardening**: Role-based admin session management for `resolve_dispute`, Passkey / WebAuthn signer support, independent security audit.
 - **Developer Ergonomics**: SDK auto-retrying RPC helpers, mock Soroban RPC local test container, CLI playground.
 
-*(No speculative issues have been created prior to project approval).*
+*Update 2026-10-27:* this pack originally stated that no issues had been created before approval. That is no longer accurate. Eight issues (#21 to #28) were opened on 2026-10-13, each corresponding to an area above: provider discovery for sponsor intents, reconciliation metrics, dead-letter handling, an authenticated admin dispute workflow, SDK retry helpers, a manual accessibility review, passkey signing and an interactive playground. They are planned work, not implemented features.
+
+## Reviewer Resources
+
+- [ARCHITECTURE.md](../ARCHITECTURE.md)
+- [Differentiation analysis](../docs/differentiation.md)
+- [Trust model and security evidence matrix](../docs/trust-and-security-evidence.md)
+- [Reviewer Q&A](./reviewer-qa.md)
 
 ## Submission Status
 
