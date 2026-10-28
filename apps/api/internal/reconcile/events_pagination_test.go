@@ -604,3 +604,164 @@ func TestReconcileEvents_EmptyRangeDoesNotInventCompletedWatermark(t *testing.T)
 		t.Errorf("second empty-range getEvents calls = %d, want 1", rpc.calls)
 	}
 }
+
+func TestInspectEventRecovery_NoActiveGap(t *testing.T) {
+	s := newTestStore(t)
+	rpc := &pagedFakeRPC{health: func() (protocol.GetHealthResponse, error) {
+		return protocol.GetHealthResponse{Status: "healthy", OldestLedger: 10, LatestLedger: 20}, nil
+	}}
+	runner := New(s, rpc, testLogger(), time.Hour, testProviderRegistryID, testCareAgreementID, testSettlementAssetID)
+	snapshot, err := runner.InspectEventRecovery(context.Background())
+	if err != nil {
+		t.Fatalf("InspectEventRecovery: %v", err)
+	}
+	if snapshot.Gap != nil || snapshot.ReconciliationBlocked || !snapshot.HistoricalRecoveryPossible || snapshot.HistoricalRangeStatus != HistoricalStatusNoGapUnverified || snapshot.HistoricalCompletenessVerified {
+		t.Fatalf("unexpected no-gap snapshot: %+v", snapshot)
+	}
+	if snapshot.RPCOldestLedger != 10 || snapshot.RPCLatestLedger != 20 {
+		t.Errorf("RPC ledgers = %d/%d, want 10/20", snapshot.RPCOldestLedger, snapshot.RPCLatestLedger)
+	}
+}
+
+func TestInspectEventRecovery_PendingAndMalformedGap(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	if err := s.SetReconciliationCursor(ctx, eventCursorKey, "100"); err != nil {
+		t.Fatalf("SetReconciliationCursor cursor: %v", err)
+	}
+	raw := pendingGapJSON(t)
+	if err := s.SetReconciliationCursor(ctx, eventGapKey, raw); err != nil {
+		t.Fatalf("SetReconciliationCursor gap: %v", err)
+	}
+	rpc := &pagedFakeRPC{health: func() (protocol.GetHealthResponse, error) {
+		return protocol.GetHealthResponse{Status: "healthy", OldestLedger: 9000, LatestLedger: 10000}, nil
+	}}
+	runner := New(s, rpc, testLogger(), time.Hour, testProviderRegistryID, testCareAgreementID, testSettlementAssetID)
+	snapshot, err := runner.InspectEventRecovery(ctx)
+	if err != nil {
+		t.Fatalf("InspectEventRecovery pending: %v", err)
+	}
+	if snapshot.Gap == nil || !snapshot.ReconciliationBlocked || snapshot.HistoricalRecoveryPossible || snapshot.HistoricalRangeStatus != HistoricalStatusPendingGap || snapshot.HistoricalCompletenessVerified || snapshot.GapID != EventRecoveryGapID(raw) {
+		t.Fatalf("unexpected pending-gap snapshot: %+v", snapshot)
+	}
+
+	if err := s.SetReconciliationCursor(ctx, eventGapKey, "malformed"); err != nil {
+		t.Fatalf("SetReconciliationCursor malformed gap: %v", err)
+	}
+	snapshot, err = runner.InspectEventRecovery(ctx)
+	if err != nil {
+		t.Fatalf("InspectEventRecovery malformed: %v", err)
+	}
+	if snapshot.Gap != nil || snapshot.GapError == "" || !snapshot.ReconciliationBlocked || snapshot.HistoricalRecoveryPossible || snapshot.HistoricalRangeStatus != HistoricalStatusMalformedGap {
+		t.Fatalf("unexpected malformed-gap snapshot: %+v", snapshot)
+	}
+}
+
+func TestRecoveryReportsCompleteSkippedRangeWhenRetentionAdvances(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	if err := s.SetReconciliationCursor(ctx, eventCursorKey, "100"); err != nil {
+		t.Fatalf("SetReconciliationCursor cursor: %v", err)
+	}
+	raw := pendingGapJSON(t) // detected at RPC oldest ledger 9000
+	if err := s.SetReconciliationCursor(ctx, eventGapKey, raw); err != nil {
+		t.Fatalf("SetReconciliationCursor gap: %v", err)
+	}
+	oldest := uint32(9000)
+	rpc := &pagedFakeRPC{health: func() (protocol.GetHealthResponse, error) {
+		return protocol.GetHealthResponse{Status: "healthy", OldestLedger: oldest, LatestLedger: 10000}, nil
+	}}
+	runner := New(s, rpc, testLogger(), time.Hour, testProviderRegistryID, testCareAgreementID, testSettlementAssetID)
+	initial, err := runner.InspectEventRecovery(ctx)
+	if err != nil {
+		t.Fatalf("initial InspectEventRecovery: %v", err)
+	}
+	if initial.RPCOldestLedger != 9000 || initial.Gap.RPCOldestLedger != 9000 {
+		t.Fatalf("initial retention boundaries = current %d, recorded %d", initial.RPCOldestLedger, initial.Gap.RPCOldestLedger)
+	}
+
+	oldest = 9100
+	advanced, err := runner.InspectEventRecovery(ctx)
+	if err != nil {
+		t.Fatalf("advanced InspectEventRecovery: %v", err)
+	}
+	skipped, err := CalculateCompleteSkippedRange(*advanced.Gap, advanced.RPCOldestLedger, 9100)
+	if err != nil {
+		t.Fatalf("CalculateCompleteSkippedRange: %v", err)
+	}
+	if skipped.FromLedger != 100 || skipped.OriginalThroughLedger != 8999 || skipped.ThroughLedger != 9099 || skipped.ApprovedResumeLedger != 9100 {
+		t.Fatalf("skipped range = %+v, want original 100-8999 and complete 100-9099, resume 9100", skipped)
+	}
+
+	// A confirmation based on the old boundary is stale and cannot be used.
+	if err := runner.AcknowledgeEventRetentionGapAt(ctx, EventRecoveryGapID(raw), "100", 9000, store.ReconciliationAudit{Action: "acknowledge_event_retention_gap", ResourceID: "contract_events", Metadata: []byte(`{"operator":"test"}`)}); err == nil {
+		t.Fatal("acknowledgment at the old boundary must be rejected")
+	}
+	metadata := []byte(`{"operator":"test","accepted_missing_through_ledger":9099}`)
+	if err := runner.AcknowledgeEventRetentionGapAt(ctx, EventRecoveryGapID(raw), "100", 9100, store.ReconciliationAudit{Action: "acknowledge_event_retention_gap", ResourceID: "contract_events", Metadata: metadata}); err != nil {
+		t.Fatalf("acknowledgment at advanced boundary: %v", err)
+	}
+	acknowledged, err := s.GetReconciliationCursor(ctx, eventGapKey)
+	if err != nil || !strings.Contains(acknowledged, `"resumed_at_ledger":9100`) {
+		t.Fatalf("acknowledged gap = %q, err=%v", acknowledged, err)
+	}
+	decisions, err := s.ListAuditRecords(ctx, "reconciliation_gap", "contract_events")
+	if err != nil {
+		t.Fatalf("ListAuditRecords: %v", err)
+	}
+	var auditMetadata map[string]any
+	if len(decisions) != 1 || json.Unmarshal(decisions[0].MetadataJSON, &auditMetadata) != nil || auditMetadata["accepted_missing_through_ledger"] != float64(9099) {
+		t.Fatalf("audit decisions = %+v, want complete skipped range through 9099", decisions)
+	}
+}
+
+func TestAcknowledgeEventRetentionGapAt_RejectsStaleConfirmationAndWritesAudit(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	if err := s.SetReconciliationCursor(ctx, eventCursorKey, "100"); err != nil {
+		t.Fatalf("SetReconciliationCursor cursor: %v", err)
+	}
+	raw := pendingGapJSON(t)
+	if err := s.SetReconciliationCursor(ctx, eventGapKey, raw); err != nil {
+		t.Fatalf("SetReconciliationCursor gap: %v", err)
+	}
+	rpc := &pagedFakeRPC{health: func() (protocol.GetHealthResponse, error) {
+		return protocol.GetHealthResponse{Status: "healthy", OldestLedger: 9000}, nil
+	}}
+	runner := New(s, rpc, testLogger(), time.Hour, testProviderRegistryID, testCareAgreementID, testSettlementAssetID)
+	gapID := EventRecoveryGapID(raw)
+	if err := runner.AcknowledgeEventRetentionGapAt(ctx, "wrong", "100", 9000, store.ReconciliationAudit{Action: "ack", ResourceID: "contract_events", Metadata: []byte(`{"operator":"test"}`)}); err == nil {
+		t.Fatal("wrong gap confirmation must be rejected")
+	}
+	if err := runner.AcknowledgeEventRetentionGapAt(ctx, gapID, "100", 9001, store.ReconciliationAudit{Action: "ack", ResourceID: "contract_events", Metadata: []byte(`{"operator":"test"}`)}); err == nil {
+		t.Fatal("stale resume confirmation must be rejected")
+	}
+	if err := runner.AcknowledgeEventRetentionGapAt(ctx, gapID, "100", 9000, store.ReconciliationAudit{Action: "acknowledge_event_retention_gap", ResourceID: "contract_events", Metadata: []byte(`{"operator":"test"}`)}); err != nil {
+		t.Fatalf("AcknowledgeEventRetentionGapAt: %v", err)
+	}
+
+	decisions, err := s.ListAuditRecords(ctx, "reconciliation_gap", "contract_events")
+	if err != nil {
+		t.Fatalf("ListAuditRecords: %v", err)
+	}
+	if len(decisions) != 1 || decisions[0].Result != "accepted" {
+		t.Fatalf("audit decisions = %+v, want one accepted decision", decisions)
+	}
+	if err := runner.AcknowledgeEventRetentionGapAt(ctx, gapID, "100", 9000, store.ReconciliationAudit{Action: "acknowledge_event_retention_gap", ResourceID: "contract_events", Metadata: []byte(`{"operator":"test"}`)}); err == nil {
+		t.Fatal("repeated confirmation must be rejected")
+	}
+}
+
+func pendingGapJSON(t *testing.T) string {
+	t.Helper()
+	b, err := json.Marshal(eventGapRecord{
+		DetectedAt:      time.Date(2026, 10, 28, 0, 0, 0, 0, time.UTC),
+		RequestedLedger: 100,
+		RPCOldestLedger: 9000,
+		RPCError:        "retained window",
+	})
+	if err != nil {
+		t.Fatalf("marshal pending gap: %v", err)
+	}
+	return string(b)
+}

@@ -41,6 +41,24 @@ func (s *Store) SetReconciliationCursor(ctx context.Context, key, value string) 
 // compared with the caller's read before either row is changed, so a stale
 // operator action cannot overwrite newer reconciliation state.
 func (s *Store) AcknowledgeReconciliationGap(ctx context.Context, gapKey, cursorKey, expectedGap, expectedCursor, newCursor, acknowledgedGap string) error {
+	return s.acknowledgeReconciliationGap(ctx, gapKey, cursorKey, expectedGap, expectedCursor, newCursor, acknowledgedGap, nil)
+}
+
+// ReconciliationAudit describes the append-only evidence to write in the
+// same transaction as a recovery acknowledgment.
+type ReconciliationAudit struct {
+	Action     string
+	ResourceID string
+	Metadata   []byte
+}
+
+// AcknowledgeReconciliationGapWithAudit atomically updates the recovery
+// state and appends its operator decision to audit_records.
+func (s *Store) AcknowledgeReconciliationGapWithAudit(ctx context.Context, gapKey, cursorKey, expectedGap, expectedCursor, newCursor, acknowledgedGap string, audit ReconciliationAudit) error {
+	return s.acknowledgeReconciliationGap(ctx, gapKey, cursorKey, expectedGap, expectedCursor, newCursor, acknowledgedGap, &audit)
+}
+
+func (s *Store) acknowledgeReconciliationGap(ctx context.Context, gapKey, cursorKey, expectedGap, expectedCursor, newCursor, acknowledgedGap string, audit *ReconciliationAudit) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning reconciliation gap acknowledgement: %w", err)
@@ -82,6 +100,14 @@ func (s *Store) AcknowledgeReconciliationGap(ctx context.Context, gapKey, cursor
 		UPDATE reconciliation_state SET value = $2, updated_at = now() WHERE key = $1
 	`, gapKey, acknowledgedGap); err != nil {
 		return fmt.Errorf("recording reconciliation acknowledgement: %w", err)
+	}
+	if audit != nil {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO audit_records (action, resource_type, resource_id, result, metadata_json)
+			VALUES ($1, 'reconciliation_gap', $2, 'accepted', $3)
+		`, audit.Action, audit.ResourceID, audit.Metadata); err != nil {
+			return fmt.Errorf("recording reconciliation audit: %w", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

@@ -19,3 +19,30 @@ func (s *Store) InsertAuditRecord(ctx context.Context, actorWallet *string, acti
 	}
 	return nil
 }
+
+// ListAuditRecords returns immutable audit evidence in creation order.
+func (s *Store) ListAuditRecords(ctx context.Context, resourceType, resourceID string) ([]AuditRecord, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, actor_wallet, action, resource_type, resource_id, result, created_at, metadata_json
+		FROM audit_records
+		WHERE resource_type = $1 AND resource_id = $2
+		ORDER BY id
+	`, resourceType, resourceID)
+	if err != nil {
+		return nil, fmt.Errorf("listing audit records for %s %s: %w", resourceType, resourceID, err)
+	}
+	defer rows.Close()
+
+	var records []AuditRecord
+	for rows.Next() {
+		var record AuditRecord
+		if err := rows.Scan(&record.ID, &record.ActorWallet, &record.Action, &record.ResourceType, &record.ResourceID, &record.Result, &record.CreatedAt, &record.MetadataJSON); err != nil {
+			return nil, fmt.Errorf("scanning audit record: %w", err)
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating audit records: %w", err)
+	}
+	return records, nil
+}
