@@ -114,6 +114,19 @@ export interface Client {
   check_attester: ({attester, provider}: {attester: string, provider: string}, options?: MethodOptions) => Promise<AssembledTransaction<boolean>>
 
   /**
+   * Construct and simulate a transfer_admin transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Replace the admin. Requires authorization from BOTH the current admin
+   * and `new_admin`, so a role cannot be handed to an address that has
+   * not agreed to hold it. The change is atomic: if either authorization
+   * is missing the call fails and the current admin is unchanged.
+   * 
+   * Only the admin address is replaced. No agreement, registry record,
+   * balance or other state is read or modified. Passing the current admin
+   * as `new_admin` is an authorized no-op.
+   */
+  transfer_admin: ({new_admin}: {new_admin: string}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+
+  /**
    * Construct and simulate a revoke_attester transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Revoke an attester (terminal operation). Requires admin authorization.
    */
@@ -194,6 +207,7 @@ export class Client extends ContractClient {
         "AAAAAAAAAB9SZWFkIGFuIGF0dGVzdGVyJ3MgZnVsbCByZWNvcmQuAAAAAAxnZXRfYXR0ZXN0ZXIAAAABAAAAAAAAAAhhdHRlc3RlcgAAABMAAAABAAAD6AAAB9AAAAAOQXR0ZXN0ZXJSZWNvcmQAAA==",
         "AAAAAAAAAB5SZWFkIGEgcHJvdmlkZXIncyBmdWxsIHJlY29yZC4AAAAAAAxnZXRfcHJvdmlkZXIAAAABAAAAAAAAAAhwcm92aWRlcgAAABMAAAABAAAD6AAAB9AAAAAOUHJvdmlkZXJSZWNvcmQAAA==",
         "AAAAAAAAALJDaGVjayBpZiBhbiBhdHRlc3RlciBpcyBBY3RpdmUgYW5kIGJvdW5kIHRvIGFuIEFjdGl2ZSBwcm92aWRlci4KUmV0dXJucyB0cnVlIG9ubHkgd2hlbjogYXR0ZXN0ZXIgZXhpc3RzLCBpcyBBY3RpdmUsIHByb3ZpZGVyIGV4aXN0cywKaXMgQWN0aXZlLCBhbmQgYXR0ZXN0ZXIucHJvdmlkZXIgPT0gcHJvdmlkZXIuAAAAAAAOY2hlY2tfYXR0ZXN0ZXIAAAAAAAIAAAAAAAAACGF0dGVzdGVyAAAAEwAAAAAAAAAIcHJvdmlkZXIAAAATAAAAAQAAAAE=",
+        "AAAAAAAAAbxSZXBsYWNlIHRoZSBhZG1pbi4gUmVxdWlyZXMgYXV0aG9yaXphdGlvbiBmcm9tIEJPVEggdGhlIGN1cnJlbnQgYWRtaW4KYW5kIGBuZXdfYWRtaW5gLCBzbyBhIHJvbGUgY2Fubm90IGJlIGhhbmRlZCB0byBhbiBhZGRyZXNzIHRoYXQgaGFzCm5vdCBhZ3JlZWQgdG8gaG9sZCBpdC4gVGhlIGNoYW5nZSBpcyBhdG9taWM6IGlmIGVpdGhlciBhdXRob3JpemF0aW9uCmlzIG1pc3NpbmcgdGhlIGNhbGwgZmFpbHMgYW5kIHRoZSBjdXJyZW50IGFkbWluIGlzIHVuY2hhbmdlZC4KCk9ubHkgdGhlIGFkbWluIGFkZHJlc3MgaXMgcmVwbGFjZWQuIE5vIGFncmVlbWVudCwgcmVnaXN0cnkgcmVjb3JkLApiYWxhbmNlIG9yIG90aGVyIHN0YXRlIGlzIHJlYWQgb3IgbW9kaWZpZWQuIFBhc3NpbmcgdGhlIGN1cnJlbnQgYWRtaW4KYXMgYG5ld19hZG1pbmAgaXMgYW4gYXV0aG9yaXplZCBuby1vcC4AAAAOdHJhbnNmZXJfYWRtaW4AAAAAAAEAAAAAAAAACW5ld19hZG1pbgAAAAAAABMAAAABAAAD6QAAAAIAAAfQAAAADVJlZ2lzdHJ5RXJyb3IAAAA=",
         "AAAAAAAAAEZSZXZva2UgYW4gYXR0ZXN0ZXIgKHRlcm1pbmFsIG9wZXJhdGlvbikuIFJlcXVpcmVzIGFkbWluIGF1dGhvcml6YXRpb24uAAAAAAAPcmV2b2tlX2F0dGVzdGVyAAAAAAEAAAAAAAAACGF0dGVzdGVyAAAAEwAAAAEAAAPpAAAAAgAAB9AAAAANUmVnaXN0cnlFcnJvcgAAAA==",
         "AAAAAAAAAEVSZXZva2UgYSBwcm92aWRlciAodGVybWluYWwgb3BlcmF0aW9uKS4gUmVxdWlyZXMgYWRtaW4gYXV0aG9yaXphdGlvbi4AAAAAAAAPcmV2b2tlX3Byb3ZpZGVyAAAAAAEAAAAAAAAACHByb3ZpZGVyAAAAEwAAAAEAAAPpAAAAAgAAB9AAAAANUmVnaXN0cnlFcnJvcgAAAA==",
         "AAAAAAAAADlTdXNwZW5kIGFuIGFjdGl2ZSBhdHRlc3Rlci4gUmVxdWlyZXMgYWRtaW4gYXV0aG9yaXphdGlvbi4AAAAAAAAQc3VzcGVuZF9hdHRlc3RlcgAAAAEAAAAAAAAACGF0dGVzdGVyAAAAEwAAAAEAAAPpAAAAAgAAB9AAAAANUmVnaXN0cnlFcnJvcgAAAA==",
@@ -212,6 +226,7 @@ export class Client extends ContractClient {
         get_attester: this.txFromJSON<Option<AttesterRecord>>,
         get_provider: this.txFromJSON<Option<ProviderRecord>>,
         check_attester: this.txFromJSON<boolean>,
+        transfer_admin: this.txFromJSON<Result<void>>,
         revoke_attester: this.txFromJSON<Result<void>>,
         revoke_provider: this.txFromJSON<Result<void>>,
         suspend_attester: this.txFromJSON<Result<void>>,

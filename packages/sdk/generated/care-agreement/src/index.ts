@@ -177,6 +177,19 @@ export interface Client {
   get_agreement: ({agreement_id}: {agreement_id: u64}, options?: MethodOptions) => Promise<AssembledTransaction<Result<Agreement>>>
 
   /**
+   * Construct and simulate a transfer_admin transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Replace the admin. Requires authorization from BOTH the current admin
+   * and `new_admin`, so a role cannot be handed to an address that has
+   * not agreed to hold it. The change is atomic: if either authorization
+   * is missing the call fails and the current admin is unchanged.
+   * 
+   * Only the admin address is replaced. No agreement, registry record,
+   * balance or other state is read or modified. Passing the current admin
+   * as `new_admin` is an authorized no-op.
+   */
+  transfer_admin: ({new_admin}: {new_admin: string}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+
+  /**
    * Construct and simulate a resolve_dispute transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Resolve a dispute on an agreement.
    * Requires admin authorization.
@@ -237,6 +250,7 @@ export class Client extends ContractClient {
         "AAAAAAAAAMFBdHRlc3QgdGhhdCBjYXJlIGhhcyBiZWVuIHByb3ZpZGVkLgpSZXF1aXJlcyBhdHRlc3RlciBhdXRob3JpemF0aW9uLgpUcmFuc2l0aW9ucyBzdGF0ZSBmcm9tIEZ1bmRlZCB0byBDYXJlQ29uZmlybWVkLgpSZWNvcmRzIGF0dGVzdGF0aW9uIGNvbW1pdG1lbnQsIGF0dGVzdGVyIGFkZHJlc3MsIGFuZCBhdHRlc3RhdGlvbiB0aW1lc3RhbXAuAAAAAAAAC2F0dGVzdF9jYXJlAAAAAAMAAAAAAAAADGFncmVlbWVudF9pZAAAAAYAAAAAAAAACGF0dGVzdGVyAAAAEwAAAAAAAAAWYXR0ZXN0YXRpb25fY29tbWl0bWVudAAAAAAD7gAAACAAAAABAAAD6QAAAAIAAAfQAAAADkFncmVlbWVudEVycm9yAAA=",
         "AAAAAAAAANFPcGVuIGEgZGlzcHV0ZSBvbiBhbiBhZ3JlZW1lbnQuClJlcXVpcmVzIGF1dGhvcml6YXRpb24gZnJvbSBzcG9uc29yIG9yIHByb3ZpZGVyLgpUcmFuc2l0aW9ucyBzdGF0ZSBmcm9tIEZ1bmRlZCBvciBDYXJlQ29uZmlybWVkIHRvIERpc3B1dGVkLgpSZWNvcmRzIGRpc3B1dGUgb3JpZ2luIHN0YXRlLCBvcGVuZXIgYWRkcmVzcywgYW5kIGRpc3B1dGUgdGltZXN0YW1wLgAAAAAAAAxvcGVuX2Rpc3B1dGUAAAACAAAAAAAAAAxhZ3JlZW1lbnRfaWQAAAAGAAAAAAAAAAZvcGVuZXIAAAAAABMAAAABAAAD6QAAAAIAAAfQAAAADkFncmVlbWVudEVycm9yAAA=",
         "AAAAAAAAABlSZWFkIGFuIGFncmVlbWVudCByZWNvcmQuAAAAAAAADWdldF9hZ3JlZW1lbnQAAAAAAAABAAAAAAAAAAxhZ3JlZW1lbnRfaWQAAAAGAAAAAQAAA+kAAAfQAAAACUFncmVlbWVudAAAAAAAB9AAAAAOQWdyZWVtZW50RXJyb3IAAA==",
+        "AAAAAAAAAbxSZXBsYWNlIHRoZSBhZG1pbi4gUmVxdWlyZXMgYXV0aG9yaXphdGlvbiBmcm9tIEJPVEggdGhlIGN1cnJlbnQgYWRtaW4KYW5kIGBuZXdfYWRtaW5gLCBzbyBhIHJvbGUgY2Fubm90IGJlIGhhbmRlZCB0byBhbiBhZGRyZXNzIHRoYXQgaGFzCm5vdCBhZ3JlZWQgdG8gaG9sZCBpdC4gVGhlIGNoYW5nZSBpcyBhdG9taWM6IGlmIGVpdGhlciBhdXRob3JpemF0aW9uCmlzIG1pc3NpbmcgdGhlIGNhbGwgZmFpbHMgYW5kIHRoZSBjdXJyZW50IGFkbWluIGlzIHVuY2hhbmdlZC4KCk9ubHkgdGhlIGFkbWluIGFkZHJlc3MgaXMgcmVwbGFjZWQuIE5vIGFncmVlbWVudCwgcmVnaXN0cnkgcmVjb3JkLApiYWxhbmNlIG9yIG90aGVyIHN0YXRlIGlzIHJlYWQgb3IgbW9kaWZpZWQuIFBhc3NpbmcgdGhlIGN1cnJlbnQgYWRtaW4KYXMgYG5ld19hZG1pbmAgaXMgYW4gYXV0aG9yaXplZCBuby1vcC4AAAAOdHJhbnNmZXJfYWRtaW4AAAAAAAEAAAAAAAAACW5ld19hZG1pbgAAAAAAABMAAAABAAAD6QAAAAIAAAfQAAAADkFncmVlbWVudEVycm9yAAA=",
         "AAAAAAAAAM9SZXNvbHZlIGEgZGlzcHV0ZSBvbiBhbiBhZ3JlZW1lbnQuClJlcXVpcmVzIGFkbWluIGF1dGhvcml6YXRpb24uClRyYW5zaXRpb25zIHN0YXRlIGZyb20gRGlzcHV0ZWQgdG8gYXBwcm9wcmlhdGUgZmluYWwgc3RhdGUgYmFzZWQgb24gcmVzb2x1dGlvbi4KUGVyZm9ybXMgbmVjZXNzYXJ5IHRva2VuIHRyYW5zZmVycyBiYXNlZCBvbiByZXNvbHV0aW9uIGFjdGlvbi4AAAAAD3Jlc29sdmVfZGlzcHV0ZQAAAAACAAAAAAAAAAxhZ3JlZW1lbnRfaWQAAAAGAAAAAAAAAApyZXNvbHV0aW9uAAAAAAfQAAAAEURpc3B1dGVSZXNvbHV0aW9uAAAAAAAAAQAAA+kAAAACAAAH0AAAAA5BZ3JlZW1lbnRFcnJvcgAA",
         "AAAAAAAAAEVDcmVhdGUgYSBuZXcgY2FyZSBmdW5kaW5nIGFncmVlbWVudC4KUmVxdWlyZXMgcHJvdmlkZXIgYXV0aG9yaXphdGlvbi4AAAAAAAAQY3JlYXRlX2FncmVlbWVudAAAAAoAAAAAAAAACHByb3ZpZGVyAAAAEwAAAAAAAAAHc3BvbnNvcgAAAAATAAAAAAAAAAhhdHRlc3RlcgAAABMAAAAAAAAAFnBhdGllbnRfcmVmX2NvbW1pdG1lbnQAAAAAA+4AAAAgAAAAAAAAABJzZXJ2aWNlX2NvbW1pdG1lbnQAAAAAA+4AAAAgAAAAAAAAAA5mdW5kaW5nX2Ftb3VudAAAAAAACwAAAAAAAAARc2V0dGxlbWVudF9hbW91bnQAAAAAAAALAAAAAAAAABBmdW5kaW5nX2RlYWRsaW5lAAAABgAAAAAAAAANY2FyZV9kZWFkbGluZQAAAAAAAAYAAAAAAAAAE2Rpc3B1dGVfd2luZG93X3NlY3MAAAAABgAAAAEAAAPpAAAABgAAB9AAAAAOQWdyZWVtZW50RXJyb3IAAA==",
         "AAAAAAAAACJSZWFkIHRoZSBzZXR0bGVtZW50IGFzc2V0IGFkZHJlc3MuAAAAAAAUZ2V0X3NldHRsZW1lbnRfYXNzZXQAAAAAAAAAAQAAA+kAAAATAAAH0AAAAA5BZ3JlZW1lbnRFcnJvcgAA",
@@ -254,6 +268,7 @@ export class Client extends ContractClient {
         attest_care: this.txFromJSON<Result<void>>,
         open_dispute: this.txFromJSON<Result<void>>,
         get_agreement: this.txFromJSON<Result<Agreement>>,
+        transfer_admin: this.txFromJSON<Result<void>>,
         resolve_dispute: this.txFromJSON<Result<void>>,
         create_agreement: this.txFromJSON<Result<u64>>,
         get_settlement_asset: this.txFromJSON<Result<string>>,
