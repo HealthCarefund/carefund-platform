@@ -48,7 +48,7 @@ After a fixed period with no admin action, anyone can call a new function that r
 - Attested care (`CareConfirmed`): after the window, `settle` pays the provider `S` and the sponsor `F - S`.
 - Unattested funded agreement (`Funded`): after the window, `expire` refunds the sponsor `F`.
 
-The effect is that a dispute can only delay an outcome that the rules would have produced anyway. Nobody gains from a timeout by opening a dispute.
+The effect is that a dispute delays an outcome the rules could have produced anyway, but resumption is not a neutral dispute-resolution mechanism. It does not itself choose a payment destination, but automatically returning a disputed `CareConfirmed` agreement to its prior state and letting `settle` run can still benefit a provider whose earlier attestation was false: if no admin adjudicates the dispute before the timeout, the timeout lets that disputed agreement settle in the provider's favor despite the sponsor's objection.
 
 Why this is safer than an automatic sponsor refund:
 
@@ -56,7 +56,7 @@ Why this is safer than an automatic sponsor refund:
 - No address is chosen by the caller. Destinations are still fixed at creation.
 - It does not need a recovery key or any new trusted party.
 
-Its cost, stated plainly: if the admin is gone, disputes stop protecting the sponsor against a false attestation. A sponsor who disputes an attested agreement will, after the timeout, see the provider paid. The timeout therefore has to be long enough for a realistic admin response (weeks, not days), and the sponsor's protection after that point is only the dispute window itself.
+Its cost, stated plainly: if the admin is gone, disputes stop protecting the sponsor against a false attestation. A sponsor who disputes an attested agreement will, after the timeout, see the provider paid. The timeout therefore has to be long enough for a realistic admin response (weeks, not days). The original dispute window is not a protection that survives the fallback: once that window has elapsed, resume is permissionless, so there is no further opportunity for on-chain adjudication before settlement runs. A sponsor who opened a dispute specifically to get adjudication can lose that effective protection entirely once the timeout passes with no admin action.
 
 Requirements and open questions:
 
@@ -83,15 +83,13 @@ Rejected. A dishonest sponsor could dispute after receiving care, wait, and take
 
 Each agreement names its own resolver instead of the global admin. This spreads the risk but changes the trust model (who picks the arbiter, and does the sponsor agree) and adds fields to `Agreement`. It is a larger design and is not proposed now.
 
-## 4. Recommendation
+## 4. Maintainer decision
 
-The smallest defensible path, in order:
-
-1. **Rotation (this PR).** Ship `transfer_admin` for new deployments so that planned handovers do not require redeploying.
-2. **Multi-signature admin (B).** For any further Testnet deployment, initialize both contracts with multi-signature accounts. This is operational and needs no contract change. Test how Soroban authorizes such accounts first.
-3. **Stale-dispute resume (C), if maintainers accept its trade-off.** It is the smallest code change that removes indefinite lockup without adding a trusted party or a payout choice. It changes dispute semantics, so it needs explicit approval and should ship only in a new deployment.
-
-Not recommended: automatic refund (E), and a recovery key with full resolution power (D) before B and C have been weighed.
+- **Rotation (A) is accepted for merging**, subject to CI verification. `transfer_admin` ships for new deployments so that planned handovers do not require redeploying.
+- **Multi-signature admin (B) is the next security task.** It is operational and needs no contract change, but how Soroban authorizes a classic account's signers and thresholds must be verified on a local network before it is relied on.
+- **Stale-dispute resume (C) is deferred.** No timeout has been approved. It changes dispute semantics in the way described in sections 1 and the updated discussion above, and ships only with explicit maintainer approval and only in a new deployment.
+- **Automatic sponsor refund after a timeout (E) remains rejected**, for the reasons already given.
+- **No recovery mechanism in this document is implemented or deployed.** Options B, C, D, and F remain proposals for future work, not shipped behavior, and must not be described as implemented or deployed until they actually are.
 
 What this does not solve: an admin who is present but dishonest. That remains a trust assumption of the design.
 
@@ -110,9 +108,10 @@ For option C, with a real registry and a real token contract and several agreeme
 
 For option B, a local test network with a multi-signature account as admin, checking that the intended signer threshold is required and that a missing signature fails.
 
-## 6. Decisions needed from maintainers
+## 6. Status of open questions
 
-- Is option C acceptable given that it weakens dispute protection when the admin is absent?
-- If yes, what timeout, and set where?
-- Should further Testnet deployments use multi-signature admins (B)?
+Section 4 records the maintainer decision reached so far: rotation (A) proceeds, multi-signature admin (B) is the next task to verify, and stale-dispute resume (C) is deferred pending explicit approval. The questions below remain open for when C is reconsidered:
+
+- Is option C acceptable given that it weakens dispute protection when the admin is absent, as described above?
+- If accepted, what timeout, and set where?
 - Is a fresh deployment, with migration of any live agreements, acceptable for contract-level changes?
