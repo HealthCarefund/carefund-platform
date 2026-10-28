@@ -5,9 +5,11 @@
 //! Enforces the lifecycle and financial settlement of healthcare care agreements.
 
 mod test;
+mod test_attester_authorization;
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Map,
+    Symbol, TryFromVal, Val, Vec,
 };
 
 // ---------------------------------------------------------------------------
@@ -139,6 +141,63 @@ pub enum AgreementError {
     InvalidResolution = 14,
     TransferFailed = 15,
     ArithmeticOverflow = 16,
+}
+
+// ---------------------------------------------------------------------------
+// Registry lookups
+// ---------------------------------------------------------------------------
+
+/// Returns true only if the registry currently holds an `Active` record for
+/// `attester` that is bound to `provider`.
+///
+/// This reads the registry's `get_attester` record and checks the attester's
+/// own status and provider binding. It deliberately does not use the
+/// registry's `check_attester`, which also requires the provider to be
+/// `Active`, so suspending a provider does not by itself stop a funded
+/// agreement from being attested.
+///
+/// The record is decoded field by field instead of importing the registry's
+/// types. Any failure (the call fails, no record exists, the value is not a
+/// map, a field is missing or has an unexpected type) returns false, so the
+/// caller rejects the attestation.
+fn attester_is_currently_authorized(
+    env: &Env,
+    registry: &Address,
+    attester: &Address,
+    provider: &Address,
+) -> bool {
+    use soroban_sdk::IntoVal;
+
+    let result = env.try_invoke_contract::<Option<Map<Symbol, Val>>, AgreementError>(
+        registry,
+        &Symbol::new(env, "get_attester"),
+        Vec::from_array(env, [attester.clone().into_val(env)]),
+    );
+    let record = match result {
+        Ok(Ok(Some(record))) => record,
+        _ => return false,
+    };
+
+    // `ActorStatus::Active` is encoded as the one-element vector [Symbol("Active")].
+    let status = match record
+        .get(Symbol::new(env, "status"))
+        .and_then(|v| Vec::<Symbol>::try_from_val(env, &v).ok())
+    {
+        Some(status) => status,
+        None => return false,
+    };
+    if status.len() != 1 || status.get(0) != Some(Symbol::new(env, "Active")) {
+        return false;
+    }
+
+    let bound_provider = match record
+        .get(Symbol::new(env, "provider"))
+        .and_then(|v| Address::try_from_val(env, &v).ok())
+    {
+        Some(bound_provider) => bound_provider,
+        None => return false,
+    };
+    bound_provider == *provider
 }
 
 // ---------------------------------------------------------------------------
@@ -644,6 +703,23 @@ impl CareAgreementContract {
         let current_time = env.ledger().timestamp();
         if current_time > agreement.care_deadline {
             return Err(AgreementError::CareDeadlineNotPassed);
+        }
+
+        // The attester must still be authorized in the registry now, not only
+        // when the agreement was created. This applies to a new attestation
+        // only: settle, expire and resolve_dispute do not depend on it.
+        let provider_registry: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProviderRegistry)
+            .ok_or(AgreementError::Unauthorized)?;
+        if !attester_is_currently_authorized(
+            &env,
+            &provider_registry,
+            &attester,
+            &agreement.provider,
+        ) {
+            return Err(AgreementError::AttesterNotAuthorized);
         }
 
         // Record attestation
