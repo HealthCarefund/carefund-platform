@@ -66,7 +66,7 @@ This is the central limit of the design: CareFund moves money based on who signe
 | care-agreement | `initialize` | Sets admin, registry address, settlement asset once | One time |
 | care-agreement | `resolve_dispute` | `Resume`, `Settle` or `Refund` a `Disputed` agreement | Funds go only to the agreement's provider or sponsor |
 
-Also in the current source: `transfer_admin` on both contracts, which needs a signature from the current admin and from the incoming admin and changes only the admin address. `transfer_admin` is in the source and tested locally only. It is not in the deployed Testnet contracts (care_agreement WASM `b543e9a7...`, provider_registry WASM `30924b09...`), which have no admin rotation, so the deployed admins cannot use it.
+Also in the current source: `transfer_admin` on both contracts (merged to main in PR #39), which needs a signature from the current admin and from the incoming admin and changes only the admin address. It is not in the deployed Testnet contracts (care_agreement WASM `b543e9a7...`, provider_registry WASM `30924b09...`), which have no admin rotation, so the deployed admins cannot use it. Either admin address can itself be a multisignature Stellar account; this is operational (no further contract change) and was verified with real signatures locally — see [multisig admin verification](../evidence/multisig-admin-verification-2026-10-28.md).
 
 Absent: pause, upgrade, sweep, change of settlement asset, change of registry address, change of any agreement field, and any way to recover a lost admin key.
 
@@ -137,9 +137,9 @@ Caveat: the pooled balance can exceed the sum of open escrows if someone sends t
 ## 12. Known unresolved security risks
 
 1. Attester status is checked at creation and, in the current source, at attestation (tested locally by `test_attester_authorization.rs`). It is not rechecked after an attestation is accepted, and provider status is not checked at attestation, `settle` or `expire`. The deployed Testnet contract predates the attestation-time check, so live agreements still allow a revoked attester to attest. Revoking the designated attester leaves the agreement unattestable with no replacement mechanism; the sponsor refund path remains through `expire` after the deadlines unless a dispute is open.
-2. Open disputes can lock funds indefinitely. `transfer_admin` (source only) allows a planned handover but not recovery from a lost key, because it needs the current admin's signature. The deployed contracts have no rotation at all. See [dispute-recovery-proposal.md](./dispute-recovery-proposal.md).
+2. Open disputes can lock funds indefinitely. `transfer_admin` (merged to main in PR #39) allows a planned handover but not recovery from a lost key, because it needs the current admin's signature. The deployed Testnet contracts predate it and have no rotation at all. No timeout exists or is approved. See [dispute-recovery-proposal.md](./dispute-recovery-proposal.md).
 3. A dishonest or compromised attester can trigger payment for undelivered care unless the sponsor disputes in time.
-4. The admin alone decides disputes.
+4. The admin alone decides disputes. Making the admin a multisignature account (verified with real signatures locally; see [multisig admin verification](../evidence/multisig-admin-verification-2026-10-28.md)) protects against losing one of several signing keys, but does not change this: any signer subset meeting the threshold decides disputes exactly as a single admin key would, and colluding signers at or above the threshold are equivalent to a dishonest admin.
 5. No independence check between attester, provider and sponsor addresses.
 6. Commitment privacy depends entirely on callers.
 7. Browser trust in API-supplied transaction XDR (section 9).

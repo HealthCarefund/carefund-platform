@@ -38,7 +38,7 @@ The admin address is just an address. If it is a Stellar account with several si
 - Works for new deployments by choosing such an address at `initialize`.
 - Works for an existing deployment only if the current admin account is configured with extra signers while its key still exists.
 - Trust added: the signer set. Compromise of enough signers is equivalent to compromise of the admin.
-- Open point to verify before relying on it: how Soroban authorization maps a classic account's signers and thresholds. This should be tested on a local network, not assumed.
+- Verified with real signatures (not a live network — see the limitation below): Soroban authorization for a classic account checks only that account's **medium** threshold, regardless of what the contract call does. A 2-of-3 account (three signers, weight 1 each, medium/high threshold 2) behaves as expected — one signer alone cannot authorize anything, losing one signer still leaves a usable 2-of-3, and an unknown key cannot fill the gap. One non-obvious requirement found while testing: the account's own identity key must not be one of the three signers, or its explicit signer entry is shadowed by the (disabled) master-key weight. Full results, what was and was not exercised against a real network, and the financial-safety caveats: [multisig admin verification](../evidence/multisig-admin-verification-2026-10-28.md).
 - Cost: operational discipline, no code.
 
 ### C. A stale-dispute fallback that resumes, never pays (contract change)
