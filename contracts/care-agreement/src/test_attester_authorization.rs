@@ -8,9 +8,13 @@
 //! current registry record, while settlement, expiry and dispute
 //! resolution stay independent of it.
 //!
-//! All tests register the real `provider-registry` contract and a real
+//! Most tests register the real `provider-registry` contract and a real
 //! Stellar Asset Contract, so the cross-contract path and token balances
-//! are exercised, not stubbed.
+//! are exercised, not stubbed. The exception is
+//! `registry_that_cannot_return_an_attester_record_fails_closed`, which
+//! deliberately uses the stand-in `MalformedRegistry` to return a value
+//! that is not an attester record; it still uses a real token contract and
+//! the real care-agreement contract.
 
 use crate::{
     AgreementError, AgreementState, CareAgreementContract, CareAgreementContractClient,
