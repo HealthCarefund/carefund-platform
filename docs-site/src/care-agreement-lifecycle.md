@@ -102,5 +102,5 @@ The provider (`provider.require_auth()`) defines the contract parameters, naming
 - **`cancel`**: Provider can cancel an un-funded `Requested` agreement.
 - **`expire`**: Anyone can trigger expiration if deadlines lapse:
   - If in `Requested` after `funding_deadline` (`now > funding_deadline`): state becomes `Expired` with zero token transfers. At `now == funding_deadline`, funding is permitted and expiry is rejected with `FundingDeadlineNotReached`.
-  - If in `Funded` after `care_deadline + dispute_window_secs` without attestation: state becomes `Expired` and the full deposited escrow is automatically refunded to sponsor.
+  - If in `Funded` after `care_deadline + dispute_window_secs` without attestation: state becomes `Expired` and the full deposited escrow is refunded to the sponsor in that same transaction (anyone can call `expire`; a `Disputed` agreement cannot use this path).
   - Agreements in `CareConfirmed` cannot be expired (`InvalidState`).

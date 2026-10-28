@@ -1,6 +1,6 @@
 # CareFund Documentation
 
-CareFund coordinates care agreements between sponsors, healthcare providers, and independent attesters, with funding held and settlement executed by Soroban smart contracts on the Stellar network.
+CareFund coordinates care agreements between sponsors, healthcare providers, and administrator-registered attesters, with funding held and settlement rules enforced by Soroban smart contracts on the Stellar network.
 
 This documentation book provides comprehensive guidance on CareFund's smart contract protocols, Go API backend, TypeScript SDK, Next.js web application, local environment setup, and verification evidence.
 
@@ -11,7 +11,7 @@ In many healthcare scenarios, philanthropic sponsors or grant programs wish to f
 CareFund provides a transparent coordination layer:
 - **Conditional Funding**: Sponsors deposit funds directly into smart contract escrow on Stellar.
 - **Authorized Attestation**: A designated attester registered by the administrator records on-chain that agreed care was delivered. The contract cannot verify the claim; a dispute window lets the sponsor or provider object before funds are released.
-- **Autonomous Settlement**: Providers claim agreed funds on-chain once attestation is registered and required time gates pass.
+- **Permissionless Settlement**: Once attestation is registered and the time gates pass, anyone can submit the `settle` transaction, which pays the provider. Someone must still submit it; nothing runs automatically.
 - **Privacy Compartmentalization**: Raw patient references and clinical service descriptions are never stored on-chain or in backend databases; only precomputed 32-byte cryptographic commitments are recorded. Callers manage privacy and entropy off-chain.
 
 ## What CareFund Is Not

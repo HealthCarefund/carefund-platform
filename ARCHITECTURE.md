@@ -15,7 +15,7 @@ Related documents:
 
 ## 1. Purpose and goals
 
-CareFund coordinates a conditional payment for a specific piece of care. A sponsor locks funds in a contract. A provider is paid a capped amount only if an authorized attester records a confirmation by a deadline and a dispute window then passes. Otherwise the sponsor is refunded.
+CareFund coordinates a conditional payment for a specific piece of care. A sponsor locks funds in a contract. A provider is paid a capped amount only if an authorized attester records a confirmation by a deadline and a dispute window then passes. If a funded agreement is never attested and is not disputed, then once the deadlines pass anyone can call `expire`, and the sponsor is refunded when that transaction executes. If a dispute is opened, the agreement stays `Disputed` until the administrator resolves it; there is currently no dispute timeout, so not every agreement reaches a terminal state without administrator involvement.
 
 Design goals, in priority order:
 
@@ -222,7 +222,7 @@ Test and live evidence for these: [docs/trust-and-security-evidence.md](./docs/t
 ## 9. Failed and ambiguous transactions
 
 - **Contract failures are atomic.** A Soroban invocation either applies all its state changes and token transfers or none. A failed `settle` leaves the agreement in `CareConfirmed` with funds intact.
-- **Simulation first.** The API (and the SDK for `create_agreement`) simulates before returning a transaction to sign. A transaction that would fail is not offered. The Testnet evidence records nine negative paths rejected in simulation with exact error codes.
+- **Simulation first.** The API (and the SDK for `create_agreement`) simulates before returning a transaction to sign. A transaction that would fail is not offered. The Block 3B Testnet evidence itemizes eight negative paths rejected in simulation with exact error codes.
 - **Submission is separate from confirmation.** `submitTransaction` (`packages/sdk/src/transaction/submit.ts`) only enqueues and returns a hash. `waitForTransaction` (`confirm.ts`) polls a bounded number of times and distinguishes success, `FAILED`, and not-found-after-all-attempts.
 - **Ambiguity is never resolved by resubmitting.** On not-found after all attempts the SDK throws a timeout error and tells the caller to look the hash up again. The reconciler also only looks hashes up (`apps/api/internal/reconcile/transactions.go`). No code path resubmits a signed envelope. Safe retry of an uncertain submission is by hash lookup, and the chain's sequence numbers prevent double application of the same signed transaction.
 - **Deadline races.** A transaction that is valid when signed can land after a deadline and then fail on-chain. For example, a late `fund` fails with `FundingDeadlineNotPassed` (the error name is misleading: it means the deadline has passed). The sponsor loses only the fee, and the agreement can then be expired.

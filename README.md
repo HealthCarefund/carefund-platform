@@ -27,7 +27,7 @@
   <a href="ROADMAP.md">Roadmap</a>
 </p>
 
-CareFund coordinates care agreements between healthcare sponsors, medical providers, and independent attesters, holding conditional funding in escrow and executing settlement autonomously through Soroban smart contracts on the Stellar network.
+CareFund coordinates care agreements between healthcare sponsors, medical providers, and administrator-registered attesters, holding conditional funding in escrow and enforcing settlement rules through Soroban smart contracts on the Stellar network. Settlement is permissionless: anyone can submit the `settle` transaction once the contract's conditions are met. CareFund does not technically establish that an attester is independent of the provider or sponsor.
 
 CareFund operates as a funding coordination and verification protocol. CareFund does not custody user signing keys. Users sign with their own wallet, while agreement funds are held temporarily in escrow by the Soroban smart contract under the protocol's conditional release rules. It is not health insurance, an underwriter, an electronic health records system, a patient diagnostic service, or a custodial wallet service.
 
@@ -91,7 +91,7 @@ apps/
 2. **Agreement Proposal**: A registered provider initializes a care agreement (`create_agreement`) specifying token amounts, deadlines, cryptographic commitment hashes, and authorized counterparty addresses. The contract requires provider authorization.
 3. **Escrow Deposit**: The sponsor deposits funds (`fund`) into the `care-agreement` contract via the Stellar Asset Contract (SAC).
 4. **Care Attestation**: The designated attester submits an attestation hash (`attest_care`) no later than the care deadline. This is an authorized on-chain statement. The protocol does not independently verify that the care took place.
-5. **Autonomous Settlement**: Once care is attested and the dispute window (from the care deadline until `dispute_window_secs` after it) elapses, settlement (`settle`) is callable deterministically by anyone, transferring reimbursement directly to the provider wallet and refunding any escrow surplus to the sponsor.
+5. **Permissionless Settlement**: Once care is attested and the dispute window (from the care deadline until `dispute_window_secs` after it) elapses, anyone can call `settle`. The contract enforces the rules, but someone must still submit the transaction; there is no scheduler that runs it automatically. When it executes, the provider payment and the sponsor surplus refund happen in that same transaction.
 6. **Disputes and Safeguards**: If disagreements arise, either party can open a dispute (`open_dispute`) during the defined dispute window for administrative resolution (`resolve_dispute`).
 
 ## Local Quickstart
