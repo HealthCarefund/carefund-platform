@@ -9,9 +9,12 @@ import {
   simulateContractCall,
   prepareContractCallTransaction,
   createAgreementTransaction,
+  validateAgreementLifecycleTransaction,
+  validateCreateAgreementTransaction,
   WalletSigningRejectedError,
   SubmissionRejectedError,
   SimulationFailedError,
+  TransactionValidationError,
   type WalletSigner,
   type CreateAgreementParams,
 } from "@carefund/sdk";
@@ -61,20 +64,57 @@ export interface RunTransactionParams {
  * backend (build + simulate + assemble happen server-side; see
  * apps/api/internal/api/transactions.go, Commit 13). Use this for
  * fund/cancel/attest_care/open_dispute/expire/settle/resolve_dispute.
+ *
+ * The backend's response is never treated as authoritative: before
+ * returning, this independently re-derives and checks the network,
+ * source account, operation, contract, function, arguments, transaction
+ * constraints and Soroban authorization against exactly what the caller
+ * requested (see `@carefund/sdk`'s `validateAgreementLifecycleTransaction`,
+ * packages/sdk/src/transaction/validate.ts). A mismatch throws
+ * `TransactionValidationError` before any wallet-signing call happens.
  */
 export function prepareViaBackend(params: RunTransactionParams): TransactionPreparer {
   return async () => {
+    const config = getStellarConfig();
     const prepared = await prepareAgreementTransaction(params.agreementId, {
       operation: params.operation,
       sourcePublicKey: params.sourcePublicKey,
       attestationCommitment: params.attestationCommitment,
       resolution: params.resolution,
     });
-    const envelope = TransactionBuilder.fromXDR(prepared.unsignedTransactionXdr, prepared.networkPassphrase);
-    if (!("signatures" in envelope)) {
-      throw new Error("Prepared transaction is not a signable envelope");
+
+    // Never parse (let alone sign for) a network other than the one this
+    // app is independently configured for, even if the API returned a
+    // passphrase alongside the XDR — that value is not trusted merely
+    // because it arrived with the transaction.
+    if (prepared.networkPassphrase !== config.networkPassphrase) {
+      throw new TransactionValidationError([
+        `network passphrase mismatch: expected "${config.networkPassphrase}", got "${prepared.networkPassphrase}"`,
+      ]);
     }
-    return { transaction: envelope as Transaction, networkPassphrase: prepared.networkPassphrase };
+
+    let envelope: ReturnType<typeof TransactionBuilder.fromXDR>;
+    try {
+      envelope = TransactionBuilder.fromXDR(prepared.unsignedTransactionXdr, prepared.networkPassphrase);
+    } catch (err) {
+      throw new TransactionValidationError([
+        `malformed transaction XDR: ${err instanceof Error ? err.message : String(err)}`,
+      ]);
+    }
+    if (!("signatures" in envelope)) {
+      throw new TransactionValidationError(["prepared transaction is a fee-bump envelope, not a signable transaction"]);
+    }
+    const transaction = envelope as Transaction;
+
+    validateAgreementLifecycleTransaction(config, transaction, prepared.networkPassphrase, {
+      operation: params.operation,
+      agreementId: params.agreementId,
+      sourcePublicKey: params.sourcePublicKey,
+      attestationCommitment: params.attestationCommitment,
+      resolution: params.resolution,
+    });
+
+    return { transaction, networkPassphrase: prepared.networkPassphrase };
   };
 }
 
@@ -96,6 +136,25 @@ export function prepareCreateAgreement(params: CreateAgreementParams): Transacti
     // call would fail — never silently proceeds to signing on a bad call.
     await simulateContractCall(rpc, built);
     const prepared = await prepareContractCallTransaction(rpc, built);
+
+    // Built and simulated client-side rather than returned by the API, but
+    // validated the same way for consistency: this is the one path where a
+    // compromised RPC endpoint (not a compromised backend) would have to be
+    // the attacker, and the same checks catch it just as well.
+    validateCreateAgreementTransaction(config, prepared, config.networkPassphrase, {
+      sourcePublicKey: params.sourcePublicKey,
+      provider: params.provider,
+      sponsor: params.sponsor,
+      attester: params.attester,
+      patientRefCommitment: params.patientRefCommitment,
+      serviceCommitment: params.serviceCommitment,
+      fundingAmount: params.fundingAmount,
+      settlementAmount: params.settlementAmount,
+      fundingDeadline: params.fundingDeadline,
+      careDeadline: params.careDeadline,
+      disputeWindowSecs: params.disputeWindowSecs,
+    });
+
     return { transaction: prepared, networkPassphrase: config.networkPassphrase };
   };
 }
@@ -179,6 +238,9 @@ export function describeError(err: unknown): string {
   }
   if (err instanceof SimulationFailedError) {
     return err.message;
+  }
+  if (err instanceof TransactionValidationError) {
+    return "The prepared transaction did not match what was requested and was not sent to your wallet.";
   }
   if (err instanceof ApiError) {
     return err.body?.message ?? "The request was rejected.";

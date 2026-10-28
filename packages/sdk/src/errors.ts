@@ -131,3 +131,19 @@ export class TransactionTimeoutError extends SdkError {
     this.name = "TransactionTimeoutError";
   }
 }
+
+/**
+ * A transaction prepared by the API (or built client-side) did not
+ * independently verify as the exact invocation the caller requested, before
+ * it was handed to the wallet for signing. `issues` lists every problem
+ * found, not just the first. The browser must never treat a prepared
+ * transaction as authoritative just because it parsed as valid XDR — see
+ * `transaction/validate.ts`.
+ */
+export class TransactionValidationError extends SdkError {
+  readonly code = "TRANSACTION_VALIDATION_FAILED";
+  constructor(readonly issues: readonly string[]) {
+    super(`Prepared transaction failed validation: ${issues.join("; ")}`);
+    this.name = "TransactionValidationError";
+  }
+}
