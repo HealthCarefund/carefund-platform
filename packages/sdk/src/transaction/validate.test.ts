@@ -4,6 +4,7 @@ import {
   Address,
   Asset,
   Keypair,
+  nativeToScVal,
   Operation,
   TransactionBuilder,
   xdr,
@@ -116,18 +117,73 @@ function authEntry(signer: string, contractId: string, method: string, argsRecor
   });
 }
 
+const FUNDING_AMOUNT = "1000000";
+
 function fundCall(overrides: Partial<AgreementLifecycleCall> = {}): AgreementLifecycleCall {
-  return { operation: "fund", agreementId: AGREEMENT_ID, sourcePublicKey: SPONSOR, ...overrides };
+  return {
+    operation: "fund",
+    agreementId: AGREEMENT_ID,
+    sourcePublicKey: SPONSOR,
+    expectedFundingAmount: FUNDING_AMOUNT,
+    ...overrides,
+  };
+}
+
+/**
+ * `fund`'s real, complete authorization shape: the sponsor's root
+ * authorization for `fund(agreementId, sponsor)`, with exactly one nested
+ * sub-invocation — the settlement asset's own `transfer(sponsor,
+ * careAgreementContract, amount)` — matching exactly what
+ * `contracts/care-agreement/src/lib.rs::fund` actually calls internally.
+ */
+function fundAuthEntry(signer: string, agreementId: bigint, amount: bigint): xdr.SorobanAuthorizationEntry {
+  const rootArgs = spec.funcArgsToScVals("fund", { agreement_id: agreementId, sponsor: signer });
+  const transferArgs = [
+    nativeToScVal(signer, { type: "address" }),
+    nativeToScVal(CARE_AGREEMENT_CONTRACT_ID, { type: "address" }),
+    nativeToScVal(amount, { type: "i128" }),
+  ];
+  return new xdr.SorobanAuthorizationEntry({
+    credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
+      new xdr.SorobanAddressCredentials({
+        address: Address.fromString(signer).toScAddress(),
+        nonce: 1n,
+        signatureExpirationLedger: 1000,
+        signature: xdr.ScVal.scvVoid(),
+      }),
+    ),
+    rootInvocation: new xdr.SorobanAuthorizedInvocation({
+      function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
+        new xdr.InvokeContractArgs({
+          contractAddress: Address.fromString(CARE_AGREEMENT_CONTRACT_ID).toScAddress(),
+          functionName: "fund",
+          args: rootArgs,
+        }),
+      ),
+      subInvocations: [
+        new xdr.SorobanAuthorizedInvocation({
+          function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
+            new xdr.InvokeContractArgs({
+              contractAddress: Address.fromString(SETTLEMENT_ASSET_CONTRACT_ID).toScAddress(),
+              functionName: "transfer",
+              args: transferArgs,
+            }),
+          ),
+          subInvocations: [],
+        }),
+      ],
+    }),
+  });
 }
 
 describe("validateAgreementLifecycleTransaction — legitimate calls accepted", () => {
-  it("accepts a correct fund transaction", () => {
+  it("accepts a correct fund transaction with its real nested escrow-transfer authorization", () => {
     const tx = buildTransaction({
       source: SPONSOR,
       method: "fund",
       args: [],
       argsRecord: { agreement_id: 7n, sponsor: SPONSOR },
-      auth: [authEntry(SPONSOR, CARE_AGREEMENT_CONTRACT_ID, "fund", { agreement_id: 7n, sponsor: SPONSOR })],
+      auth: [fundAuthEntry(SPONSOR, 7n, BigInt(FUNDING_AMOUNT))],
     });
     expect(() => validateAgreementLifecycleTransaction(config, tx, NETWORK_PASSPHRASE, fundCall())).not.toThrow();
   });
@@ -212,42 +268,19 @@ describe("validateAgreementLifecycleTransaction — legitimate calls accepted", 
     ).not.toThrow();
   });
 
-  it("accepts a legitimate transaction carrying simulation-style resource-padded fee and a nested token-transfer sub-invocation", () => {
+  it("accepts a legitimate fund transaction carrying a simulation-style resource-padded fee, with its real nested escrow-transfer authorization", () => {
     const argsRecord = { agreement_id: 7n, sponsor: SPONSOR };
-    const nested = new xdr.SorobanAuthorizedInvocation({
-      function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
-        new xdr.InvokeContractArgs({
-          contractAddress: Address.fromString(SETTLEMENT_ASSET_CONTRACT_ID).toScAddress(),
-          functionName: "transfer",
-          args: [],
-        }),
-      ),
-      subInvocations: [],
-    });
-    const entry = new xdr.SorobanAuthorizationEntry({
-      credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
-        new xdr.SorobanAddressCredentials({
-          address: Address.fromString(SPONSOR).toScAddress(),
-          nonce: 1n,
-          signatureExpirationLedger: 1000,
-          signature: xdr.ScVal.scvVoid(),
-        }),
-      ),
-      rootInvocation: new xdr.SorobanAuthorizedInvocation({
-        function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
-          new xdr.InvokeContractArgs({
-            contractAddress: Address.fromString(CARE_AGREEMENT_CONTRACT_ID).toScAddress(),
-            functionName: "fund",
-            args: spec.funcArgsToScVals("fund", argsRecord),
-          }),
-        ),
-        subInvocations: [nested],
-      }),
-    });
     // A resource-fee-padded fee, well above the trivial base fee but still
     // far under the circuit-breaker — representative of real
     // `prepareTransaction` output.
-    const tx = buildTransaction({ source: SPONSOR, method: "fund", args: [], argsRecord, auth: [entry], fee: "1234567" });
+    const tx = buildTransaction({
+      source: SPONSOR,
+      method: "fund",
+      args: [],
+      argsRecord,
+      auth: [fundAuthEntry(SPONSOR, 7n, BigInt(FUNDING_AMOUNT))],
+      fee: "1234567",
+    });
     expect(() => validateAgreementLifecycleTransaction(config, tx, NETWORK_PASSPHRASE, fundCall())).not.toThrow();
   });
 });
@@ -470,6 +503,182 @@ describe("validateAgreementLifecycleTransaction — rejections", () => {
     expect(() => validateAgreementLifecycleTransaction(config, tx, NETWORK_PASSPHRASE, fundCall())).toThrow(
       TransactionValidationError,
     );
+  });
+});
+
+// These 7 scenarios were confirmed, before this validator verified the full
+// authorization tree, to be incorrectly ACCEPTED by `validateInvocationTree`
+// — it checked only that a node's contract address was on the allowlist
+// (care-agreement or settlement asset), never the authorized function or
+// its arguments. Every one of the 7 cases below passed validation against
+// the pre-fix code; this was confirmed directly against that code (not
+// assumed) before the fix was written.
+describe("validateAgreementLifecycleTransaction — full authorization-tree verification", () => {
+  function fundTx(auth: xdr.SorobanAuthorizationEntry[]) {
+    return buildTransaction({
+      source: SPONSOR,
+      method: "fund",
+      args: [],
+      argsRecord: { agreement_id: 7n, sponsor: SPONSOR },
+      auth,
+    });
+  }
+
+  function customInvocation(
+    contractId: string,
+    method: string,
+    args: xdr.ScVal[],
+    subInvocations: xdr.SorobanAuthorizedInvocation[] = [],
+  ): xdr.SorobanAuthorizedInvocation {
+    return new xdr.SorobanAuthorizedInvocation({
+      function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
+        new xdr.InvokeContractArgs({
+          contractAddress: Address.fromString(contractId).toScAddress(),
+          functionName: method,
+          args,
+        }),
+      ),
+      subInvocations,
+    });
+  }
+
+  function customAuthEntry(signer: string, rootInvocation: xdr.SorobanAuthorizedInvocation): xdr.SorobanAuthorizationEntry {
+    return new xdr.SorobanAuthorizationEntry({
+      credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
+        new xdr.SorobanAddressCredentials({
+          address: Address.fromString(signer).toScAddress(),
+          nonce: 1n,
+          signatureExpirationLedger: 1000,
+          signature: xdr.ScVal.scvVoid(),
+        }),
+      ),
+      rootInvocation,
+    });
+  }
+
+  it("1: rejects an authorization root for fund(8, sponsor) when the operation itself invokes fund(7, sponsor)", () => {
+    const authArgs = spec.funcArgsToScVals("fund", { agreement_id: 8n, sponsor: SPONSOR });
+    const tx = fundTx([customAuthEntry(SPONSOR, customInvocation(CARE_AGREEMENT_CONTRACT_ID, "fund", authArgs))]);
+    expect(() => validateAgreementLifecycleTransaction(config, tx, NETWORK_PASSPHRASE, fundCall())).toThrow(
+      TransactionValidationError,
+    );
+  });
+
+  it("2: rejects an authorization root for a different CareFund method on the same (trusted) contract address", () => {
+    const authArgs = spec.funcArgsToScVals("resolve_dispute", {
+      agreement_id: 7n,
+      resolution: { tag: "Refund", values: undefined },
+    });
+    const tx = fundTx([
+      customAuthEntry(SPONSOR, customInvocation(CARE_AGREEMENT_CONTRACT_ID, "resolve_dispute", authArgs)),
+    ]);
+    expect(() => validateAgreementLifecycleTransaction(config, tx, NETWORK_PASSPHRASE, fundCall())).toThrow(
+      TransactionValidationError,
+    );
+  });
+
+  it("3: rejects a settlement-asset sub-invocation with an unexpected function (approve instead of transfer)", () => {
+    const attacker = Keypair.random().publicKey();
+    const sub = customInvocation(SETTLEMENT_ASSET_CONTRACT_ID, "approve", [
+      nativeToScVal(SPONSOR, { type: "address" }),
+      nativeToScVal(attacker, { type: "address" }),
+      nativeToScVal(BigInt(FUNDING_AMOUNT), { type: "i128" }),
+    ]);
+    const rootArgs = spec.funcArgsToScVals("fund", { agreement_id: 7n, sponsor: SPONSOR });
+    const tx = fundTx([
+      customAuthEntry(SPONSOR, customInvocation(CARE_AGREEMENT_CONTRACT_ID, "fund", rootArgs, [sub])),
+    ]);
+    expect(() => validateAgreementLifecycleTransaction(config, tx, NETWORK_PASSPHRASE, fundCall())).toThrow(
+      TransactionValidationError,
+    );
+  });
+
+  it("4: rejects a token transfer whose source is not the sponsor", () => {
+    const attacker = Keypair.random().publicKey();
+    const sub = customInvocation(SETTLEMENT_ASSET_CONTRACT_ID, "transfer", [
+      nativeToScVal(attacker, { type: "address" }),
+      nativeToScVal(CARE_AGREEMENT_CONTRACT_ID, { type: "address" }),
+      nativeToScVal(BigInt(FUNDING_AMOUNT), { type: "i128" }),
+    ]);
+    const rootArgs = spec.funcArgsToScVals("fund", { agreement_id: 7n, sponsor: SPONSOR });
+    const tx = fundTx([
+      customAuthEntry(SPONSOR, customInvocation(CARE_AGREEMENT_CONTRACT_ID, "fund", rootArgs, [sub])),
+    ]);
+    expect(() => validateAgreementLifecycleTransaction(config, tx, NETWORK_PASSPHRASE, fundCall())).toThrow(
+      TransactionValidationError,
+    );
+  });
+
+  it("5: rejects a token transfer whose destination is not the care-agreement contract", () => {
+    const attacker = Keypair.random().publicKey();
+    const sub = customInvocation(SETTLEMENT_ASSET_CONTRACT_ID, "transfer", [
+      nativeToScVal(SPONSOR, { type: "address" }),
+      nativeToScVal(attacker, { type: "address" }),
+      nativeToScVal(BigInt(FUNDING_AMOUNT), { type: "i128" }),
+    ]);
+    const rootArgs = spec.funcArgsToScVals("fund", { agreement_id: 7n, sponsor: SPONSOR });
+    const tx = fundTx([
+      customAuthEntry(SPONSOR, customInvocation(CARE_AGREEMENT_CONTRACT_ID, "fund", rootArgs, [sub])),
+    ]);
+    expect(() => validateAgreementLifecycleTransaction(config, tx, NETWORK_PASSPHRASE, fundCall())).toThrow(
+      TransactionValidationError,
+    );
+  });
+
+  it("6: rejects a token transfer amount that differs from the independently-established legitimate amount", () => {
+    const sub = customInvocation(SETTLEMENT_ASSET_CONTRACT_ID, "transfer", [
+      nativeToScVal(SPONSOR, { type: "address" }),
+      nativeToScVal(CARE_AGREEMENT_CONTRACT_ID, { type: "address" }),
+      nativeToScVal(BigInt(FUNDING_AMOUNT) * 1000n, { type: "i128" }),
+    ]);
+    const rootArgs = spec.funcArgsToScVals("fund", { agreement_id: 7n, sponsor: SPONSOR });
+    const tx = fundTx([
+      customAuthEntry(SPONSOR, customInvocation(CARE_AGREEMENT_CONTRACT_ID, "fund", rootArgs, [sub])),
+    ]);
+    expect(() => validateAgreementLifecycleTransaction(config, tx, NETWORK_PASSPHRASE, fundCall())).toThrow(
+      TransactionValidationError,
+    );
+  });
+
+  it("7: rejects an additional, unrelated authorization entry alongside a legitimate fund entry", () => {
+    const attacker = Keypair.random().publicKey();
+    const legitEntry = fundAuthEntry(SPONSOR, 7n, BigInt(FUNDING_AMOUNT));
+    const extraInvocation = customInvocation(SETTLEMENT_ASSET_CONTRACT_ID, "transfer", [
+      nativeToScVal(SPONSOR, { type: "address" }),
+      nativeToScVal(attacker, { type: "address" }),
+      nativeToScVal(500_000_000n, { type: "i128" }),
+    ]);
+    const extraEntry = customAuthEntry(SPONSOR, extraInvocation);
+    const tx = fundTx([legitEntry, extraEntry]);
+    expect(() => validateAgreementLifecycleTransaction(config, tx, NETWORK_PASSPHRASE, fundCall())).toThrow(
+      TransactionValidationError,
+    );
+  });
+
+  it("fails closed when fund is validated without an independently-established expectedFundingAmount", () => {
+    const tx = fundTx([fundAuthEntry(SPONSOR, 7n, BigInt(FUNDING_AMOUNT))]);
+    expect(() =>
+      validateAgreementLifecycleTransaction(config, tx, NETWORK_PASSPHRASE, fundCall({ expectedFundingAmount: undefined })),
+    ).toThrow(TransactionValidationError);
+  });
+
+  it("rejects a non-fund operation (cancel) that unexpectedly carries a nested sub-invocation", () => {
+    const rootArgs = spec.funcArgsToScVals("cancel", { agreement_id: 7n, provider: PROVIDER });
+    const sub = customInvocation(SETTLEMENT_ASSET_CONTRACT_ID, "transfer", [
+      nativeToScVal(PROVIDER, { type: "address" }),
+      nativeToScVal(CARE_AGREEMENT_CONTRACT_ID, { type: "address" }),
+      nativeToScVal(1n, { type: "i128" }),
+    ]);
+    const tx = buildTransaction({
+      source: PROVIDER,
+      method: "cancel",
+      args: [],
+      argsRecord: { agreement_id: 7n, provider: PROVIDER },
+      auth: [customAuthEntry(PROVIDER, customInvocation(CARE_AGREEMENT_CONTRACT_ID, "cancel", rootArgs, [sub]))],
+    });
+    expect(() =>
+      validateAgreementLifecycleTransaction(config, tx, NETWORK_PASSPHRASE, fundCall({ operation: "cancel", sourcePublicKey: PROVIDER, expectedFundingAmount: undefined })),
+    ).toThrow(TransactionValidationError);
   });
 });
 

@@ -9,6 +9,7 @@ import {
   simulateContractCall,
   prepareContractCallTransaction,
   createAgreementTransaction,
+  getAgreement,
   validateAgreementLifecycleTransaction,
   validateCreateAgreementTransaction,
   WalletSigningRejectedError,
@@ -18,6 +19,7 @@ import {
   type WalletSigner,
   type CreateAgreementParams,
 } from "@carefund/sdk";
+import { toAgreementId } from "@carefund/types";
 import { getStellarConfig } from "./stellar-config";
 import {
   prepareAgreementTransaction,
@@ -106,12 +108,23 @@ export function prepareViaBackend(params: RunTransactionParams): TransactionPrep
     }
     const transaction = envelope as Transaction;
 
+    // `fund`'s escrow-transfer amount is not one of its own call arguments
+    // — the contract reads it from stored agreement state — so there is no
+    // way to verify that nested authorization without an independent,
+    // trustworthy source for it. Read it fresh from the contract itself,
+    // never from this app's own off-chain cache.
+    const expectedFundingAmount =
+      params.operation === "fund"
+        ? (await getAgreement(config, toAgreementId(params.agreementId))).fundingAmount
+        : undefined;
+
     validateAgreementLifecycleTransaction(config, transaction, prepared.networkPassphrase, {
       operation: params.operation,
       agreementId: params.agreementId,
       sourcePublicKey: params.sourcePublicKey,
       attestationCommitment: params.attestationCommitment,
       resolution: params.resolution,
+      expectedFundingAmount,
     });
 
     return { transaction, networkPassphrase: prepared.networkPassphrase };
@@ -166,6 +179,70 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * The actual preparation-to-confirmation control flow: prepare (which
+ * independently validates, per `prepareViaBackend`/`prepareCreateAgreement`
+ * above) → wallet signing → RPC submission → confirmation polling. Pulled
+ * out of `useTransactionFlow` as a plain async function — not a hook — so
+ * it can be exercised directly in tests against the real implementation,
+ * without rendering a React component or reimplementing this sequence
+ * inside a test. `useTransactionFlow.run` below is a thin wrapper that
+ * supplies `onState`/`isCancelled` from its own `useState`/`useRef`.
+ *
+ * Preparation strictly precedes signing: if `prepare()` rejects (as it
+ * does for every `TransactionValidationError` case), `awaitWalletSignature`
+ * is never reached — there is no path from a thrown `prepare()` to the
+ * signing/submission steps below. The "failed" state is terminal here; it
+ * never carries a hash because `prepare()` rejecting happens before any
+ * hash could exist.
+ */
+export async function runTransactionPipeline(
+  prepare: TransactionPreparer,
+  getSigner: () => WalletSigner,
+  onState: (state: TransactionFlowState) => void,
+  isCancelled: () => boolean,
+): Promise<void> {
+  try {
+    onState({ phase: "preparing" });
+    onState({ phase: "simulating" });
+    const { transaction, networkPassphrase } = await prepare();
+    if (isCancelled()) return;
+
+    onState({ phase: "awaiting_signature" });
+    const signed = await awaitWalletSignature(getSigner(), transaction, networkPassphrase);
+    if (isCancelled()) return;
+
+    onState({ phase: "submitting" });
+    const rpc = createRpcServer(getStellarConfig());
+    const { hash } = await submitToRpc(rpc, signed);
+    if (isCancelled()) return;
+    onState({ phase: "submitted", hash });
+
+    for (let attempt = 1; attempt <= CONFIRMATION_ATTEMPTS; attempt++) {
+      if (isCancelled()) return;
+      onState({ phase: "confirming", hash, attempt });
+      const lookup = await lookupTransaction(hash);
+      if (isCancelled()) return;
+
+      if (lookup.status === "success") {
+        onState({ phase: "confirmed", hash, ledger: lookup.ledger });
+        return;
+      }
+      if (lookup.status === "failed") {
+        onState({ phase: "failed", hash, reason: "Transaction failed on-chain" });
+        return;
+      }
+      if (attempt < CONFIRMATION_ATTEMPTS) {
+        await sleep(CONFIRMATION_INTERVAL_MS);
+      }
+    }
+    onState({ phase: "timeout", hash });
+  } catch (err) {
+    if (isCancelled()) return;
+    onState({ phase: "failed", reason: describeError(err) });
+  }
+}
+
 export function useTransactionFlow(getSigner: () => WalletSigner) {
   const [state, setState] = useState<TransactionFlowState>({ phase: "idle" });
   const cancelled = useRef(false);
@@ -178,46 +255,7 @@ export function useTransactionFlow(getSigner: () => WalletSigner) {
   const run = useCallback(
     async (prepare: TransactionPreparer) => {
       cancelled.current = false;
-
-      try {
-        setState({ phase: "preparing" });
-        setState({ phase: "simulating" });
-        const { transaction, networkPassphrase } = await prepare();
-        if (cancelled.current) return;
-
-        setState({ phase: "awaiting_signature" });
-        const signed = await awaitWalletSignature(getSigner(), transaction, networkPassphrase);
-        if (cancelled.current) return;
-
-        setState({ phase: "submitting" });
-        const rpc = createRpcServer(getStellarConfig());
-        const { hash } = await submitToRpc(rpc, signed);
-        if (cancelled.current) return;
-        setState({ phase: "submitted", hash });
-
-        for (let attempt = 1; attempt <= CONFIRMATION_ATTEMPTS; attempt++) {
-          if (cancelled.current) return;
-          setState({ phase: "confirming", hash, attempt });
-          const lookup = await lookupTransaction(hash);
-          if (cancelled.current) return;
-
-          if (lookup.status === "success") {
-            setState({ phase: "confirmed", hash, ledger: lookup.ledger });
-            return;
-          }
-          if (lookup.status === "failed") {
-            setState({ phase: "failed", hash, reason: "Transaction failed on-chain" });
-            return;
-          }
-          if (attempt < CONFIRMATION_ATTEMPTS) {
-            await sleep(CONFIRMATION_INTERVAL_MS);
-          }
-        }
-        setState({ phase: "timeout", hash });
-      } catch (err) {
-        if (cancelled.current) return;
-        setState({ phase: "failed", reason: describeError(err) });
-      }
+      await runTransactionPipeline(prepare, getSigner, setState, () => cancelled.current);
     },
     [getSigner],
   );
