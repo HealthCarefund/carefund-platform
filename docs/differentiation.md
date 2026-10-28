@@ -21,7 +21,7 @@ This is a source-based comparison. It states what each project implements, where
 | Dispute window that gates payout | Yes | No | No | No | No |
 | Payout needs no trusted actor in the normal case | Yes: after the window, anyone calls `settle` | No: `release_signer` must sign | No | No: admin `disburse` | No: hospital claims, patient can cancel |
 | Capped reimbursement with surplus refund in the same `settle` transaction | Yes | No (fixed escrow amount; fees only) | No | No | No (milestone amounts) |
-| Default outcome if nobody acts | Full refund to sponsor on funded expiry | Funds stay until a role acts | n/a | Admin-driven refund after expiry | No expiry found |
+| Outcome after expiry when invoked | After the deadlines pass, anyone can call `expire` on an eligible `Funded` agreement without attestation; the full sponsor refund happens when that transaction executes. A `Disputed` agreement cannot use this path | No expiry or deadline logic found; funds stay until a role acts | n/a | Admin must call `refund` after `expires_at`; the amount goes to the admin address | No expiry found |
 | Dispute resolution | Admin picks Resume, Settle or Refund | Resolver distributes to any addresses | n/a | n/a | Admin sends remainder to patient or hospital |
 | Milestones / partial release | No | Yes | Via Trustless Work | No | Yes |
 | Platform fee model | None | Yes (0.3% protocol fee plus configurable platform fee) | Via Trustless Work | None | None |
