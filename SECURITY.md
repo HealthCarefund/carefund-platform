@@ -71,12 +71,15 @@ attester registration and status changes, are all admin only calls on
 `contracts/provider-registry`, enforced by that contract's own
 `require_auth()`, not by `apps/api`. `contracts/care-agreement` checks a
 provider's active status (at `create_agreement` and `fund`) and an
-attester's authorization for that provider (at `create_agreement`
-only) through real cross contract calls into the registry, not through
-any value the caller supplies about themselves. `attest_care`, `settle`
-and `expire` do not consult the registry, so a later suspension or
-revocation does not affect agreements that already exist. See
-`docs/trust-and-security-evidence.md`.
+attester's authorization for that provider (at `create_agreement` and,
+in the current source, at `attest_care`) through real cross contract
+calls into the registry, not through any value the caller supplies
+about themselves. At `attest_care` the attester must currently be
+`Active` and bound to the agreement's provider; provider status is not
+checked there. An attestation already accepted is not rechecked, and
+`settle`, `expire` and `resolve_dispute` do not consult the registry.
+The attestation-time check is tested locally but is not in the current
+Testnet deployment. See `docs/trust-and-security-evidence.md`.
 
 ## Data privacy
 

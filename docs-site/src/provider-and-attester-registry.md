@@ -72,7 +72,7 @@ The trait `ProviderRegistryTrait` specifies all callable endpoints:
 
 ## Cross-Contract Interaction
 
-`care-agreement` invokes the registry as real cross-contract calls: `create_agreement` calls `is_provider_active` and `check_attester`, and `fund` calls `is_provider_active`. `attest_care`, `settle` and `expire` do not call the registry, so suspending or revoking an actor does not change agreements that already exist.
+`care-agreement` invokes the registry as real cross-contract calls: `create_agreement` calls `is_provider_active` and `check_attester`, and `fund` calls `is_provider_active`. `attest_care` reads the attester's current record with `get_attester` and requires status `Active` and a binding to the agreement's provider (it does not check provider status), so a suspended or revoked attester cannot submit a new attestation, and a reinstated one can again before the care deadline. An attestation already accepted is not rechecked, and `settle`, `expire` and `resolve_dispute` do not call the registry. The attestation-time check is in the current source and tested locally; the Testnet deployment predates it. If a designated attester is revoked, the agreement cannot be attested and there is no replacement mechanism; the sponsor refund path remains through `expire` after the deadlines unless a dispute is open.
 - If a provider is suspended between agreement proposal and funding, the agreement cannot be funded.
 - If an attester is revoked or not bound to the provider, agreement creation fails immediately with `AttesterNotAuthorized`.
 
