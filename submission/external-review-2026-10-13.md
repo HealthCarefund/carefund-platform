@@ -121,3 +121,4 @@ This addendum was added after the review above. The text above is the original r
 3. **Demo record.** `submission/demo.md` used the state names `Created` and `Attested` and said the dispute window opened at attestation. The contract states are `Requested` and `CareConfirmed`, and the dispute window opens at `care_deadline`. Corrected in the 2026-10-27 documentation pass.
 4. **Negative-path count.** The Block 3B evidence summary refers to nine simulation-rejected negative paths; eight are itemized.
 5. **Registry rechecks.** `attest_care`, `settle` and `expire` do not consult the registry after creation. See `docs/trust-and-security-evidence.md`.
+6. **Update 2026-10-28.** Item 5 describes the contract as deployed on Testnet. The current source now rechecks the attester's status and provider binding in `attest_care` (tested locally, not deployed). `settle`, `expire` and dispute resolution still do not consult the registry.

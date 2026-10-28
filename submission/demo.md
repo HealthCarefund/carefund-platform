@@ -70,7 +70,7 @@ The demo execution follows the critical end-to-end CareFund protocol lifecycle:
 1. Connect authorized attester wallet `GB677TBBVXGLIFAYVLYZNTP4YHMHSL2OWHAQEUSVQDN4D2JYAWDCPFRT`.
 2. Locate the funded agreement.
 3. Submit a 32-byte attestation commitment hash (`attest_care`). The contract does not check what the hash refers to.
-4. Attester signs in Freighter; the contract checks that the signer is the attester named in the agreement. (The registry bound that attester to the provider when the agreement was created; `attest_care` does not query the registry again.)
+4. Attester signs in Freighter; the contract checks that the signer is the attester named in the agreement. (The registry bound that attester to the provider when the agreement was created. The current source also rechecks the attester's `Active` status and provider binding at attestation, but the Testnet contracts used for the recorded evidence predate that check.)
 5. Agreement status updates to `CareConfirmed`. This records an authorized attester's statement; it is not independent proof that care was delivered. No dispute clock starts at this point: the dispute window opens at `care_deadline`.
 
 ### Step 5: Transaction Confirmation & Final Agreement State

@@ -82,7 +82,7 @@ Working and evidenced:
 - Agreement #8 created, funded, attested and then settled by a third-party account through the browser with Freighter, with 8,000,000 stroops to the provider and 2,000,000 returned to the sponsor.
 - A signature-rejection case that submitted nothing.
 - Go API with idempotency and reconciliation, TypeScript SDK, Next.js app.
-- 117 contract tests (90 and 27).
+- 133 contract tests locally (106 and 27). The 16 attestation-time authorization tests run against current source only; the Testnet deployment predates that change.
 
 Planned, not implemented (open GitHub issues #21 to #28): provider discovery for sponsor intents, reconciliation metrics, dead-letter handling, an authenticated admin workflow for dispute resolution, SDK retry helpers, a manual accessibility review, passkey signing, and an interactive playground.
 
