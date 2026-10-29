@@ -8,6 +8,11 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	protocol "github.com/stellar/go-stellar-sdk/protocols/rpc"
+
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/stellarrpc"
 )
 
 func TestLookupTransaction_ValidatesHashFormat(t *testing.T) {
@@ -59,16 +64,72 @@ func TestLookupTransaction_NotFoundLiveTestnet(t *testing.T) {
 	}
 }
 
-// TestLookupTransaction_SuccessLiveTestnet looks up the real, genuine
-// transaction hash from this phase's live Testnet verification (the
-// register_attester call recorded in Commit 13's message) - a real
-// confirmed on-chain transaction, not fabricated.
+// TestLookupTransaction_SuccessDeterministic keeps the success response and
+// endpoint behavior covered after the historical live transaction falls out
+// of Soroban RPC's finite transaction-retention window.
+func TestLookupTransaction_SuccessDeterministic(t *testing.T) {
+	const hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	rpcServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ID any `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"jsonrpc": "2.0",
+			"id":      req.ID,
+			"result": map[string]any{
+				"status":                protocol.TransactionStatusSuccess,
+				"txHash":                hash,
+				"ledger":                12345,
+				"latestLedger":          12345,
+				"latestLedgerCloseTime": "1700000000",
+				"oldestLedger":          1,
+				"oldestLedgerCloseTime": "1699990000",
+				"applicationOrder":      1,
+				"feeBump":               false,
+				"events":                map[string]any{},
+			},
+		})
+	}))
+	defer rpcServer.Close()
+
+	deps, _ := newTestDeps(t)
+	deps.RPC = stellarrpc.New(rpcServer.URL, 5*time.Second)
+	defer deps.RPC.Close()
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, deps)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/transactions/"+hash, nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body transactionLookupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if body.Status != lookupStatusSuccess || body.Ledger != "12345" {
+		t.Errorf("response = %+v, want success at ledger 12345", body)
+	}
+}
+
+// TestLookupTransaction_SuccessLiveTestnet preserves the live check against
+// the genuine historical transaction recorded in
+// evidence/testnet-2026-10-09-block3b.md. Soroban RPC only retains a bounded
+// transaction window, so an unavailable historical prerequisite is skipped;
+// the deterministic test above still covers the application success path.
 func TestLookupTransaction_SuccessLiveTestnet(t *testing.T) {
 	if os.Getenv("SKIP_LIVE_NETWORK_TESTS") != "" {
 		t.Skip("SKIP_LIVE_NETWORK_TESTS is set")
 	}
 	deps, _ := newTestDeps(t)
 	deps.RPC = liveRPCClient(t)
+	defer deps.RPC.Close()
 	if _, err := deps.RPC.Health(context.Background()); err != nil {
 		t.Skipf("Testnet RPC not reachable from this environment: %v", err)
 	}
@@ -76,6 +137,21 @@ func TestLookupTransaction_SuccessLiveTestnet(t *testing.T) {
 	RegisterRoutes(mux, deps)
 
 	const knownSuccessfulHash = "9ae6dc480e876a32a18e5b0d12ce5a3187010c01ce319d0ac1e035589845285c"
+	const knownSuccessfulLedger = uint32(5104998)
+	historical, err := deps.RPC.GetTransaction(context.Background(), knownSuccessfulHash)
+	if err != nil {
+		t.Fatalf("historical transaction lookup failed: %v", err)
+	}
+	if historical.Status == protocol.TransactionStatusNotFound {
+		health, err := deps.RPC.Health(context.Background())
+		if err != nil {
+			t.Fatalf("checking Testnet retention after NOT_FOUND: %v", err)
+		}
+		t.Skipf("historical Testnet transaction %s was successful at ledger %d but is no longer in Soroban RPC transaction history: status=%q, oldestLedger=%d, latestLedger=%d, retentionWindow=%d; original evidence remains in evidence/testnet-2026-10-09-block3b.md and Horizon", knownSuccessfulHash, knownSuccessfulLedger, historical.Status, health.OldestLedger, health.LatestLedger, health.LedgerRetentionWindow)
+	}
+	if historical.Status != protocol.TransactionStatusSuccess {
+		t.Fatalf("historical transaction %s returned unexpected RPC status %q (ledger=%d, oldestLedger=%d, latestLedger=%d)", knownSuccessfulHash, historical.Status, historical.Ledger, historical.OldestLedger, historical.LatestLedger)
+	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/transactions/"+knownSuccessfulHash, nil)
 	mux.ServeHTTP(rec, req)
