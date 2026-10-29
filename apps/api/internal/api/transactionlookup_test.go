@@ -118,11 +118,75 @@ func TestLookupTransaction_SuccessDeterministic(t *testing.T) {
 	}
 }
 
+type historicalRetentionDecision uint8
+
+const (
+	historicalRetentionUnknown historicalRetentionDecision = iota
+	historicalTransactionStillRetained
+	historicalTransactionPruned
+)
+
+func classifyHistoricalTransactionRetention(resp protocol.GetTransactionResponse, historicalLedger uint32) historicalRetentionDecision {
+	if resp.OldestLedger == 0 || resp.LatestLedger == 0 || resp.OldestLedger > resp.LatestLedger {
+		return historicalRetentionUnknown
+	}
+	if resp.OldestLedger > historicalLedger {
+		return historicalTransactionPruned
+	}
+	if historicalLedger <= resp.LatestLedger {
+		return historicalTransactionStillRetained
+	}
+	return historicalRetentionUnknown
+}
+
+func TestClassifyHistoricalTransactionRetention(t *testing.T) {
+	const historicalLedger = uint32(500)
+	cases := []struct {
+		name string
+		resp protocol.GetTransactionResponse
+		want historicalRetentionDecision
+	}{
+		{
+			name: "oldest ledger is newer than historical transaction",
+			resp: protocol.GetTransactionResponse{OldestLedger: 600, LatestLedger: 700},
+			want: historicalTransactionPruned,
+		},
+		{
+			name: "historical transaction is inside retention range",
+			resp: protocol.GetTransactionResponse{OldestLedger: 400, LatestLedger: 700},
+			want: historicalTransactionStillRetained,
+		},
+		{
+			name: "latest ledger has not reached historical transaction",
+			resp: protocol.GetTransactionResponse{OldestLedger: 400, LatestLedger: 450},
+			want: historicalRetentionUnknown,
+		},
+		{
+			name: "retention bounds are missing",
+			resp: protocol.GetTransactionResponse{},
+			want: historicalRetentionUnknown,
+		},
+		{
+			name: "retention bounds are inconsistent",
+			resp: protocol.GetTransactionResponse{OldestLedger: 700, LatestLedger: 600},
+			want: historicalRetentionUnknown,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classifyHistoricalTransactionRetention(tc.resp, historicalLedger); got != tc.want {
+				t.Fatalf("decision = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestLookupTransaction_SuccessLiveTestnet preserves the live check against
 // the genuine historical transaction recorded in
 // evidence/testnet-2026-10-09-block3b.md. Soroban RPC only retains a bounded
-// transaction window, so an unavailable historical prerequisite is skipped;
-// the deterministic test above still covers the application success path.
+// transaction window, so this skips only when the RPC proves the transaction
+// is older than its retained range; an in-range NOT_FOUND remains a failure.
 func TestLookupTransaction_SuccessLiveTestnet(t *testing.T) {
 	if os.Getenv("SKIP_LIVE_NETWORK_TESTS") != "" {
 		t.Skip("SKIP_LIVE_NETWORK_TESTS is set")
@@ -143,11 +207,14 @@ func TestLookupTransaction_SuccessLiveTestnet(t *testing.T) {
 		t.Fatalf("historical transaction lookup failed: %v", err)
 	}
 	if historical.Status == protocol.TransactionStatusNotFound {
-		health, err := deps.RPC.Health(context.Background())
-		if err != nil {
-			t.Fatalf("checking Testnet retention after NOT_FOUND: %v", err)
+		switch classifyHistoricalTransactionRetention(historical, knownSuccessfulLedger) {
+		case historicalTransactionPruned:
+			t.Skipf("historical Testnet transaction %s was successful at ledger %d but is older than this Soroban RPC's retained range: status=%q, oldestLedger=%d, latestLedger=%d; original evidence remains in evidence/testnet-2026-10-09-block3b.md and Horizon", knownSuccessfulHash, knownSuccessfulLedger, historical.Status, historical.OldestLedger, historical.LatestLedger)
+		case historicalTransactionStillRetained:
+			t.Fatalf("historical Testnet transaction %s returned NOT_FOUND even though ledger %d is within this Soroban RPC's reported range %d-%d", knownSuccessfulHash, knownSuccessfulLedger, historical.OldestLedger, historical.LatestLedger)
+		default:
+			t.Fatalf("historical Testnet transaction %s returned NOT_FOUND, but reliable retention bounds could not be established: oldestLedger=%d, latestLedger=%d; cannot confirm that retention caused the response", knownSuccessfulHash, historical.OldestLedger, historical.LatestLedger)
 		}
-		t.Skipf("historical Testnet transaction %s was successful at ledger %d but is no longer in Soroban RPC transaction history: status=%q, oldestLedger=%d, latestLedger=%d, retentionWindow=%d; original evidence remains in evidence/testnet-2026-10-09-block3b.md and Horizon", knownSuccessfulHash, knownSuccessfulLedger, historical.Status, health.OldestLedger, health.LatestLedger, health.LedgerRetentionWindow)
 	}
 	if historical.Status != protocol.TransactionStatusSuccess {
 		t.Fatalf("historical transaction %s returned unexpected RPC status %q (ledger=%d, oldestLedger=%d, latestLedger=%d)", knownSuccessfulHash, historical.Status, historical.Ledger, historical.OldestLedger, historical.LatestLedger)
