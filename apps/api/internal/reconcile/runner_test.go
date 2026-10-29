@@ -226,9 +226,9 @@ func TestReconcileTransactions_RPCFailureDoesNotAbortOtherHashes(t *testing.T) {
 func TestReconcileEvents_PersistsCursorAndIngestsIdempotently(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	providerRegistryID := "C" + strings.Repeat("A", 55)
-	careAgreementID := "C" + strings.Repeat("B", 55)
-	settlementAssetID := "C" + strings.Repeat("X", 55)
+	providerRegistryID := testProviderRegistryID
+	careAgreementID := testCareAgreementID
+	settlementAssetID := testSettlementAssetID
 
 	if err := s.UpsertAgreement(ctx, store.CareAgreement{
 		AgreementID:               7,
@@ -262,6 +262,9 @@ func TestReconcileEvents_PersistsCursorAndIngestsIdempotently(t *testing.T) {
 		getEvents: func(req protocol.GetEventsRequest) (protocol.GetEventsResponse, error) {
 			calls++
 			return protocol.GetEventsResponse{Events: []protocol.EventInfo{event}, LatestLedger: 501}, nil
+		},
+		simulate: func(envelopeXDR string) (protocol.SimulateTransactionResponse, error) {
+			return paginationAgreementSimulation(), nil
 		},
 	}
 
@@ -551,6 +554,169 @@ func TestReconcileEvents_FailedEventDoesNotAdvanceCursor(t *testing.T) {
 	}
 	if currentCursor != initialCursor {
 		t.Errorf("cursor advanced to %q despite failed event ingestion, want %q", currentCursor, initialCursor)
+	}
+}
+
+func TestReconcileEvents_AgreementStateFetchFailureDoesNotMarkEventReconciled(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	if err := s.SetReconciliationCursor(ctx, eventCursorKey, "100"); err != nil {
+		t.Fatalf("SetReconciliationCursor: %v", err)
+	}
+	if err := s.UpsertAgreement(ctx, store.CareAgreement{
+		AgreementID:               7,
+		SponsorWallet:             "G" + strings.Repeat("S", 55),
+		ProviderWallet:            "G" + strings.Repeat("P", 55),
+		AttesterWallet:            "G" + strings.Repeat("T", 55),
+		PatientRefCommitment:      make32(1),
+		ServiceCommitment:         make32(2),
+		FundingAmount:             "1000000",
+		SettlementAmount:          "900000",
+		SettlementAssetContractID: testSettlementAssetID,
+		FundingDeadline:           1_700_000_000,
+		CareDeadline:              1_700_100_000,
+		DisputeWindowSecs:         86_400,
+		State:                     "Requested",
+	}); err != nil {
+		t.Fatalf("UpsertAgreement: %v", err)
+	}
+
+	event := makeAgreementEvent(t, 150, 0, 7, "agr_fun")
+	rpc := &fakeRPC{
+		getEvents: func(req protocol.GetEventsRequest) (protocol.GetEventsResponse, error) {
+			return protocol.GetEventsResponse{Events: []protocol.EventInfo{event}}, nil
+		},
+		simulate: func(envelopeXDR string) (protocol.SimulateTransactionResponse, error) {
+			return protocol.SimulateTransactionResponse{Error: "temporary authoritative read failure"}, nil
+		},
+	}
+
+	runner := New(s, rpc, testLogger(), time.Hour, testProviderRegistryID, testCareAgreementID, testSettlementAssetID)
+	runner.reconcileEvents(ctx)
+
+	currentCursor, err := s.GetReconciliationCursor(ctx, eventCursorKey)
+	if err != nil {
+		t.Fatalf("GetReconciliationCursor: %v", err)
+	}
+	if currentCursor != "100" {
+		t.Fatalf("cursor = %q, want unchanged 100", currentCursor)
+	}
+	page, err := s.ListEventsForAgreement(ctx, 7, 0, 10)
+	if err != nil {
+		t.Fatalf("ListEventsForAgreement: %v", err)
+	}
+	if len(page.Events) != 0 {
+		t.Fatalf("got %d events, want none while authoritative agreement state is unavailable", len(page.Events))
+	}
+	got, err := s.GetAgreement(ctx, 7)
+	if err != nil {
+		t.Fatalf("GetAgreement: %v", err)
+	}
+	if got.State != "Requested" {
+		t.Errorf("State = %q, want stale mirror to remain Requested", got.State)
+	}
+}
+
+func TestReconcileEvents_ProviderStateFetchFailureDoesNotMarkEventReconciled(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	providerWallet := "GBWPJKZC635B4NKCBWBDHE7Z7FTAAJNREF7XWC64OL3X3MJYQGUKI453"
+
+	if err := s.SetReconciliationCursor(ctx, eventCursorKey, "100"); err != nil {
+		t.Fatalf("SetReconciliationCursor: %v", err)
+	}
+	if err := s.UpsertProvider(ctx, providerWallet, make32(1), "Active"); err != nil {
+		t.Fatalf("UpsertProvider: %v", err)
+	}
+
+	event := protocol.EventInfo{
+		EventType:       protocol.EventTypeContract,
+		Ledger:          150,
+		ContractID:      testProviderRegistryID,
+		ID:              "0000001500-0000000000",
+		TransactionHash: strings.Repeat("p", 64),
+		TopicXDR:        []string{symbolTopicXDR(t, "prov_sus")},
+		ValueXDR:        walletAddressValueXDR(t, providerWallet),
+	}
+	rpc := &fakeRPC{
+		getEvents: func(req protocol.GetEventsRequest) (protocol.GetEventsResponse, error) {
+			return protocol.GetEventsResponse{Events: []protocol.EventInfo{event}}, nil
+		},
+		simulate: func(envelopeXDR string) (protocol.SimulateTransactionResponse, error) {
+			return protocol.SimulateTransactionResponse{Error: "temporary authoritative read failure"}, nil
+		},
+	}
+
+	runner := New(s, rpc, testLogger(), time.Hour, testProviderRegistryID, testCareAgreementID, testSettlementAssetID)
+	runner.reconcileEvents(ctx)
+
+	currentCursor, err := s.GetReconciliationCursor(ctx, eventCursorKey)
+	if err != nil {
+		t.Fatalf("GetReconciliationCursor: %v", err)
+	}
+	if currentCursor != "100" {
+		t.Fatalf("cursor = %q, want unchanged 100", currentCursor)
+	}
+	got, err := s.GetProviderByWallet(ctx, providerWallet)
+	if err != nil {
+		t.Fatalf("GetProviderByWallet: %v", err)
+	}
+	if got.Status != "Active" {
+		t.Errorf("Status = %q, want stale mirror to remain Active", got.Status)
+	}
+}
+
+func TestReconcileEvents_AttesterStateFetchFailureDoesNotMarkEventReconciled(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	providerWallet := "GBWPJKZC635B4NKCBWBDHE7Z7FTAAJNREF7XWC64OL3X3MJYQGUKI453"
+	attesterWallet := "GB677TBBVXGLIFAYVLYZNTP4YHMHSL2OWHAQEUSVQDN4D2JYAWDCPFRT"
+
+	if err := s.SetReconciliationCursor(ctx, eventCursorKey, "100"); err != nil {
+		t.Fatalf("SetReconciliationCursor: %v", err)
+	}
+	if err := s.UpsertProvider(ctx, providerWallet, make32(1), "Active"); err != nil {
+		t.Fatalf("UpsertProvider: %v", err)
+	}
+	if err := s.UpsertAttester(ctx, attesterWallet, providerWallet, make32(2), "Active"); err != nil {
+		t.Fatalf("UpsertAttester: %v", err)
+	}
+
+	event := protocol.EventInfo{
+		EventType:       protocol.EventTypeContract,
+		Ledger:          150,
+		ContractID:      testProviderRegistryID,
+		ID:              "0000001500-0000000000",
+		TransactionHash: strings.Repeat("a", 64),
+		TopicXDR:        []string{symbolTopicXDR(t, "att_sus")},
+		ValueXDR:        walletAddressValueXDR(t, attesterWallet),
+	}
+	rpc := &fakeRPC{
+		getEvents: func(req protocol.GetEventsRequest) (protocol.GetEventsResponse, error) {
+			return protocol.GetEventsResponse{Events: []protocol.EventInfo{event}}, nil
+		},
+		simulate: func(envelopeXDR string) (protocol.SimulateTransactionResponse, error) {
+			return protocol.SimulateTransactionResponse{Error: "temporary authoritative read failure"}, nil
+		},
+	}
+
+	runner := New(s, rpc, testLogger(), time.Hour, testProviderRegistryID, testCareAgreementID, testSettlementAssetID)
+	runner.reconcileEvents(ctx)
+
+	currentCursor, err := s.GetReconciliationCursor(ctx, eventCursorKey)
+	if err != nil {
+		t.Fatalf("GetReconciliationCursor: %v", err)
+	}
+	if currentCursor != "100" {
+		t.Fatalf("cursor = %q, want unchanged 100", currentCursor)
+	}
+	got, err := s.GetAttesterByWallet(ctx, attesterWallet)
+	if err != nil {
+		t.Fatalf("GetAttesterByWallet: %v", err)
+	}
+	if got.Status != "Active" {
+		t.Errorf("Status = %q, want stale mirror to remain Active", got.Status)
 	}
 }
 

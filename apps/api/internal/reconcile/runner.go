@@ -119,9 +119,6 @@ func (r *Runner) fetchAgreement(ctx context.Context, agreementID int64) (*store.
 func (r *Runner) reconcileAgreement(ctx context.Context, agreementID int64) error {
 	agr, err := r.fetchAgreement(ctx, agreementID)
 	if err != nil {
-		if existing, getErr := r.store.GetAgreement(ctx, agreementID); getErr == nil && existing != nil {
-			return nil
-		}
 		return fmt.Errorf("fetching agreement %d: %w", agreementID, err)
 	}
 
@@ -169,9 +166,6 @@ func (r *Runner) fetchProvider(ctx context.Context, wallet string) (*store.Provi
 func (r *Runner) reconcileProvider(ctx context.Context, wallet string) error {
 	p, err := r.fetchProvider(ctx, wallet)
 	if err != nil {
-		if existing, getErr := r.store.GetProviderByWallet(ctx, wallet); getErr == nil && existing != nil {
-			return nil
-		}
 		return fmt.Errorf("fetching provider %s: %w", wallet, err)
 	}
 
@@ -214,9 +208,6 @@ func (r *Runner) fetchAttester(ctx context.Context, wallet string) (*store.Attes
 func (r *Runner) reconcileAttester(ctx context.Context, wallet string) error {
 	a, err := r.fetchAttester(ctx, wallet)
 	if err != nil {
-		if existing, getErr := r.store.GetAttesterByWallet(ctx, wallet); getErr == nil && existing != nil {
-			return nil
-		}
 		return fmt.Errorf("fetching attester %s: %w", wallet, err)
 	}
 
