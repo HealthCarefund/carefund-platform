@@ -7,6 +7,7 @@ does not deploy the API, database or Stellar contracts.
 ## Source and prerequisites
 
 - Source baseline: `main` merge commit `6c84c42cce4e0b1ec0d05a9326cbef59d9c68452`
+- Clean-clone revision: `b891bf61fc82c9db6b67aa2bdd1a791e62ad580b`
 - PostgreSQL: the repository's `postgres:18.6-bookworm` Docker service,
   container `carefund-pg18`, host port `5439`
 - API: Go process at `http://localhost:8080`
@@ -53,6 +54,12 @@ pnpm --filter @carefund/web run dev
 The web process started at `http://localhost:3000` using only public Testnet
 contract parameters and the local API URL from the checked-in example; `GET /`
 returned HTTP 200.
+
+The API also reported the existing database's previously recorded, unacknowledged
+RPC retention gap while the reconciliation worker ran. This is expected state
+from the reused verification database and does not affect `/healthz` or
+`/readyz`; it confirms the documented retention-gap safety behavior rather than
+silently discarding the gap.
 
 ## Scope boundary
 
