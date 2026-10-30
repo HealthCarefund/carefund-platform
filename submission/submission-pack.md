@@ -97,6 +97,8 @@ Verified test totals across repository layers:
 
 PR #44 was merged into `main` as `6c84c42cce4e0b1ec0d05a9326cbef59d9c68452`. Its post-merge CI run [41070128095](https://github.com/HealthCarefund/carefund-platform/actions/runs/41070128095) passed the three required checks: Contracts (Rust/Soroban), API (Go), and Web (Next.js). The separate Docs workflow is path-triggered and verifies mdBook and offline links when documentation changes.
 
+After the documentation corrections and dependency updates, `main` at `f4291c9f88b3fb65cb2f63391c8945002748e525` passed the [three required CI checks](https://github.com/HealthCarefund/carefund-platform/actions/runs/41087872666), including contract WASM builds, API race tests and browser E2E tests. This is current-source CI verification only; the current source has not been redeployed to the historical Testnet instances. The latest dependency and test baselines are recorded in [evidence/index.md](../evidence/index.md).
+
 The reconciliation hardening has a documented lineage: PR #42 added event pagination, cursor safety and retention-gap protection; PR #43 added auditable operator recovery tooling; and PR #44 made authoritative agreement, provider and attester state reads mandatory before event reconciliation can be checkpointed. These are Go API changes, not functions deployed inside the Soroban contracts. Current Soroban source also contains contract improvements such as `transfer_admin` and the attestation-time authorization check that are absent from the historical deployed WASM. The historical Block 3B Testnet contracts and their release artifacts remain unchanged, and their transactions remain valid evidence for that earlier deployed version.
 
 ## Release
