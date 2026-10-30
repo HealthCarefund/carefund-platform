@@ -41,28 +41,25 @@ pnpm install
 ```
 
 ### 3. Configure the Go API
-Navigate to `apps/api` and copy the example environment file:
+Copy the example environment file, then export its values into the shell that will run the API:
 
 ```bash
 cp apps/api/.env.example apps/api/.env
+set -a
+source apps/api/.env
+set +a
 ```
 
-Ensure `DATABASE_URL` points to `postgres://carefund:carefund_dev@localhost:5439/carefund?sslmode=disable`.
+The Go API reads process environment variables with `os.LookupEnv`; it does not parse `.env` files automatically. The example points to the isolated PostgreSQL container and the verified Block 3B Testnet contract instances.
 
 ### 4. Configure the Next.js Frontend
-Create `apps/web/.env.local` with the following public parameters:
+Copy the public example configuration:
 
 ```bash
-NEXT_PUBLIC_STELLAR_NETWORK=TESTNET
-NEXT_PUBLIC_STELLAR_RPC_URL=https://soroban-testnet.stellar.org
-NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
-NEXT_PUBLIC_PROVIDER_REGISTRY_CONTRACT_ID=CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS
-NEXT_PUBLIC_CARE_AGREEMENT_CONTRACT_ID=CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O
-NEXT_PUBLIC_SETTLEMENT_ASSET_CONTRACT_ID=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
+cp apps/web/.env.example apps/web/.env.local
 ```
 
-Note: The contract IDs above reflect the verified Block 3B Testnet deployment recorded in `evidence/testnet-2026-10-09-block3b.md` (historical Block 1 baseline recorded in `evidence/testnet-2026-09-27.md`).
+The values are public Testnet and localhost parameters. The contract IDs reflect the verified Block 3B Testnet deployment recorded in `evidence/testnet-2026-10-09-block3b.md`; the Block 1 deployment remains historical.
 
 ### 5. Start the Go API Server
 Run the API daemon:

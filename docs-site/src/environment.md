@@ -4,11 +4,21 @@ CareFund enforces strict cross-validation on all network and configuration varia
 
 ## Go API Configuration (`apps/api/.env`)
 
-The Go API reads configuration from system environment variables or a local `.env` file via `internal/config`:
+The Go API entry point calls `config.Load(os.LookupEnv)`. It reads process environment variables and does not parse `.env` files automatically. For local development, copy the checked-in example and source it in the shell that starts the API:
+
+```bash
+cp apps/api/.env.example apps/api/.env
+set -a
+source apps/api/.env
+set +a
+```
+
+The copied file is ignored by Git. It contains local PostgreSQL settings and public Block 3B Testnet contract parameters; it contains no signing key.
 
 | Variable | Required | Default / Example | Purpose |
 |---|---|---|---|
-| `PORT` | No | `8080` | HTTP listening port |
+| `APP_ENV` | Yes | `development` | Runtime environment label |
+| `APP_ADDR` | Yes | `:8080` | HTTP listening address |
 | `DATABASE_URL` | Yes | `postgres://carefund:carefund_dev@localhost:5439/carefund?sslmode=disable` | Connection string for PostgreSQL 18.6 |
 | `STELLAR_NETWORK` | Yes | `TESTNET` | Network identifier (`TESTNET` or `CUSTOM`) |
 | `STELLAR_RPC_URL` | Yes | `https://soroban-testnet.stellar.org` | Soroban JSON-RPC endpoint |
@@ -16,7 +26,14 @@ The Go API reads configuration from system environment variables or a local `.en
 | `PROVIDER_REGISTRY_CONTRACT_ID` | Yes | `CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS` | Deployed address of provider-registry |
 | `CARE_AGREEMENT_CONTRACT_ID` | Yes | `CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O` | Deployed address of care-agreement |
 | `SETTLEMENT_ASSET_CONTRACT_ID` | Yes | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` | Deployed address of settlement asset (native SAC) |
-| `SKIP_LIVE_NETWORK_TESTS` | No | `1` (in CI) | Skip tests requiring outbound Testnet RPC connectivity |
+| `RPC_TIMEOUT` | Yes | `5s` | Soroban RPC request timeout |
+| `REQUEST_TIMEOUT` | Yes | `10s` | HTTP request timeout |
+| `RECONCILIATION_INTERVAL` | Yes | `30s` | Background reconciliation interval |
+| `CORS_ALLOWED_ORIGINS` | Yes | `http://localhost:3000` | Allowed browser origins, comma-separated |
+| `LOG_LEVEL` | Yes | `info` | Structured log level |
+| `MAX_REQUEST_BODY_BYTES` | Yes | `1048576` | Maximum accepted request body size |
+
+`SKIP_LIVE_NETWORK_TESTS=1` is a test-only CI variable, not an API runtime setting. Set it when running the Go tests without outbound Testnet access.
 
 ---
 

@@ -1,6 +1,6 @@
 # Release Procedure
 
-This document specifies the exact procedure for repository maintainers to prepare and publish releases of CareFund, beginning with `v0.1.0`.
+This document specifies the exact procedure for repository maintainers to prepare and publish future CareFund releases. Release `v0.1.0` is already published and is a historical verified snapshot; do not recreate, move or overwrite its tag or release assets.
 
 Releases are created manually by authorized repository maintainers from a verified `main` branch commit. No automated workflow publishes releases from unreviewed branches.
 
@@ -37,11 +37,13 @@ Verify that all required status checks on `main` are green for the target commit
 - Contracts (Rust/Soroban)
 - API (Go)
 - Web (Next.js)
-- Documentation (mdBook)
+
+The Documentation (mdBook) workflow is separate and path-triggered. Run it when documentation or `.github/workflows/docs.yml` changes; it is not one of the three required branch-protection checks.
 
 Check status via GitHub CLI:
 ```bash
-gh run list --branch main -L 5
+gh run list --branch main --limit 10
+gh run view <ci-run-id> --json headSha,status,conclusion,jobs,url
 ```
 
 ### 3. Run Fresh Security and Dependency Scans
@@ -58,7 +60,8 @@ pnpm audit --prod
 Rebuild both contracts in release mode using the pinned toolchain:
 
 ```bash
-stellar contract build
+stellar contract build --package provider-registry
+stellar contract build --package care-agreement
 ```
 
 Verify that the compiled artifacts exist:
@@ -72,20 +75,20 @@ Compute SHA-256 checksums of the compiled WASM files:
 sha256sum target/wasm32v1-none/release/provider_registry.wasm target/wasm32v1-none/release/care_agreement.wasm
 ```
 
-Expected hashes for Block 3B verified deployment:
+These are the historical hashes for the Block 3B deployment and the `v0.1.0` release artifacts:
 - `provider_registry.wasm`:
   `30924b0d33baf349f93dc36275e492e1803ef3dc738fd67b5ce91ee94974ab52`
 - `care_agreement.wasm`:
   `b543e9a7084ddaaf9b6377971914b5fb5c44d010c627dc5937e0a88b031f9eb5`
 
-If the computed hashes do not match, STOP. Do not publish a release without explaining the difference or completing a verified redeployment.
+If verifying `v0.1.0`, the hashes must match. A future source release is expected to have different hashes after contract changes; document the new build and deployment evidence rather than comparing it to the historical values or overwriting the old tag.
 
 ### 6. Verify TypeScript Contract Bindings
 Run the contract bindings generation script and verify no code drift occurred:
 
 ```bash
 ./scripts/generate-contract-bindings.sh
-git checkout packages/sdk/generated/*/package.json packages/sdk/generated/*/tsconfig.json
+git restore packages/sdk/generated/*/package.json packages/sdk/generated/*/tsconfig.json
 git status
 ```
 Working tree must remain clean with zero diff in `packages/sdk/generated/*/src/`.
@@ -120,48 +123,27 @@ cd ..
 ### 8. Review Changelog and Documentation
 Verify that `CHANGELOG.md` accurately describes the release version and dates. Verify that known limitations are documented transparently without overstating production or regulatory readiness.
 
-### 9. Create Release Tag
-Once all checks pass, create the annotated release tag:
+### 9. Create a New Release Tag
+Once all checks pass, choose a new version that does not already exist. Never reuse `v0.1.0`:
 
 ```bash
-git tag -a v0.1.0 -m "CareFund v0.1.0: Verified MVP on Stellar Testnet"
-git push origin v0.1.0
+RELEASE_TAG=v0.2.0  # replace with the next approved version
+git tag -a "$RELEASE_TAG" -m "CareFund $RELEASE_TAG"
+git push origin "$RELEASE_TAG"
 ```
 
 ### 10. Publish GitHub Release
-Create the GitHub release attaching the contract WASM artifacts and documenting their SHA-256 hashes:
+Create the GitHub release for the new tag, attaching only artifacts built and verified for that same source commit:
 
 ```bash
-gh release create v0.1.0 \
+gh release create "$RELEASE_TAG" \
   target/wasm32v1-none/release/provider_registry.wasm \
   target/wasm32v1-none/release/care_agreement.wasm \
-  --title "CareFund v0.1.0" \
-  --notes-file <(cat <<'EOF'
-## CareFund v0.1.0
-
-CareFund is an open-source funding coordination protocol on Stellar Testnet using Soroban smart contracts, a Go API backend, and a Next.js web application.
-
-### Deployed Testnet Contracts (Block 3B)
-- **Provider Registry**: `CCY5673G6KNI6JRRRZ46NKQU7HVCA4G4V7XH3YMZIVGQ7S7HBWDDQ7ZS`
-- **Care Agreement**: `CCBBYEVOXW2BS4V7OGRD63E3UU2Y77RF25DGBYGTZ3RFKLZTMPYNZQ4O`
-- **Settlement Asset (Native XLM SAC)**: `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`
-
-### Contract Artifacts and SHA-256 Checksums
-- `provider_registry.wasm` (8,504 bytes): `30924b0d33baf349f93dc36275e492e1803ef3dc738fd67b5ce91ee94974ab52`
-- `care_agreement.wasm` (17,075 bytes): `b543e9a7084ddaaf9b6377971914b5fb5c44d010c627dc5937e0a88b031f9eb5`
-
-### Public Documentation
-- Documentation: https://healthcarefund.github.io/carefund-platform/
-- Verification Evidence: https://github.com/HealthCarefund/carefund-platform/blob/main/evidence/index.md
-
-### Known Limitations
-- Deployed to Stellar Testnet only; not approved for production clinical operations.
-- No administrative web UI for dispute resolution (admin authorization required).
-- No external third-party security audit.
-- Deterministic SHA-256 commitments do not constitute HIPAA or GDPR compliance.
-EOF
-)
+  --title "CareFund $RELEASE_TAG" \
+  --notes-file release-notes.md
 ```
+
+The release notes must identify the exact source commit, whether a new Testnet deployment exists, each artifact checksum, the local/CI verification performed, and any remaining limitations. If no new Testnet deployment was made, say so explicitly and preserve the historical Block 3B references.
 
 ### 11. Post-Publication Verification
 Verify that:

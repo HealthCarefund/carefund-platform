@@ -90,27 +90,30 @@ Detailed audit trails and evidence references:
 
 Verified test totals across repository layers:
 
-- **Rust Contracts**: 117 tests passing (90 care-agreement, 27 provider-registry)
-- **Go API**: 127 tests passing (`go test -race -p 1 ./...`)
-- **TypeScript Workspace**: 130 tests passing (80 SDK, 11 web unit, 39 fixtures)
+- **Rust Contracts**: 178 tests passing (`cargo test --workspace`: 135 care-agreement, 43 provider-registry)
+- **Go API**: 57 passing test results (`go test -race -p 1 ./...`: 52 top-level tests plus 5 named subtests)
+- **TypeScript Workspace**: 176 tests passing (39 types, 116 SDK, 21 web unit)
 - **Playwright E2E**: 19 tests passing (including axe-core accessibility audits)
+
+PR #44 was merged into `main` as `6c84c42cce4e0b1ec0d05a9326cbef59d9c68452`. Its post-merge CI run [41070128095](https://github.com/HealthCarefund/carefund-platform/actions/runs/41070128095) passed the three required checks: Contracts (Rust/Soroban), API (Go), and Web (Next.js). The separate Docs workflow is path-triggered and verifies mdBook and offline links when documentation changes.
+
+The reconciliation hardening has a documented lineage: PR #42 added event pagination, cursor safety and retention-gap protection; PR #43 added auditable operator recovery tooling; and PR #44 made authoritative agreement, provider and attester state reads mandatory before event reconciliation can be checkpointed. These are Go API changes, not functions deployed inside the Soroban contracts. Current Soroban source also contains contract improvements such as `transfer_admin` and the attestation-time authorization check that are absent from the historical deployed WASM. The historical Block 3B Testnet contracts and their release artifacts remain unchanged, and their transactions remain valid evidence for that earlier deployed version.
 
 ## Release
 
 - **Version**: `v0.1.0`
 - **Release Tag Target**: `1775f08621a246894c799263cae94d52e1274018`
 - **Status**: Published on GitHub Releases.
-- **Context**: Release `v0.1.0` is an earlier verified release snapshot. Current `main` contains a subsequent maintainer-identity documentation cleanup commit. The release tag has not been rewritten. The release contract WASM artifacts (`provider_registry.wasm` SHA-256 `30924b0d33baf349f93dc36275e492e1803ef3dc738fd67b5ce91ee94974ab52`, `care_agreement.wasm` SHA-256 `b543e9a7084ddaaf9b6377971914b5fb5c44d010c627dc5937e0a88b031f9eb5`) correspond exactly to the verified Block 3B Testnet deployment.
+- **Context**: Release `v0.1.0` is an earlier verified release snapshot. Current `main` contains later maintainer-identity documentation work and PR #44's source/test hardening. The release tag has not been rewritten. The release contract WASM artifacts (`provider_registry.wasm` SHA-256 `30924b0d33baf349f93dc36275e492e1803ef3dc738fd67b5ce91ee94974ab52`, `care_agreement.wasm` SHA-256 `b543e9a7084ddaaf9b6377971914b5fb5c44d010c627dc5937e0a88b031f9eb5`) correspond exactly to the verified Block 3B Testnet deployment, not to every later source commit.
 
-## Deployment
+## Deployment and verification boundaries
 
-- **Web Application**: Verified locally at `http://localhost:3000`
-- **Go API**: Verified locally at `http://localhost:8080`
-- **PostgreSQL**: Runs locally through Docker (`postgres:18.6-bookworm` on port 5439)
-- **Smart Contracts**: Live on Stellar Testnet
-- **Documentation**: Public through GitHub Pages at `https://healthcarefund.github.io/carefund-platform/`
-- **No Vercel deployment is claimed**
-- **No Mainnet deployment is claimed**
+- **Current source**: `main` includes current Soroban contract improvements and the PR #42–#44 Go API reconciliation changes. The Soroban improvements are not present in the historical deployed WASM; the Go changes are off-chain API behavior, not smart-contract functions.
+- **Local verification**: The web application runs at `http://localhost:3000`, the Go API at `http://localhost:8080`, and PostgreSQL through Docker (`postgres:18.6-bookworm` on port 5439).
+- **Historical external deployment**: The Block 3B contract instances and lifecycle transactions are live on Stellar Testnet as recorded in the evidence files. They predate the current source-only contract improvements and reconciliation changes; those historical transactions remain evidence for the earlier deployed version.
+- **Public documentation**: Available through GitHub Pages at `https://healthcarefund.github.io/carefund-platform/`.
+- **Public deployment boundary**: No public API or web application deployment is claimed; only the documentation site is public.
+- **Not deployed or verified**: No Vercel deployment, Mainnet deployment, additional contract deployment, or production clinical deployment is claimed.
 
 ## Known Limitations
 
