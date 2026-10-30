@@ -91,13 +91,13 @@ Detailed audit trails and evidence references:
 Verified test totals across repository layers:
 
 - **Rust Contracts**: 178 tests passing (`cargo test --workspace`: 135 care-agreement, 43 provider-registry)
-- **Go API**: 57 tests passing (`go test -race -p 1 ./...`)
+- **Go API**: 57 passing test results (`go test -race -p 1 ./...`: 52 top-level tests plus 5 named subtests)
 - **TypeScript Workspace**: 176 tests passing (39 types, 116 SDK, 21 web unit)
 - **Playwright E2E**: 19 tests passing (including axe-core accessibility audits)
 
 PR #44 was merged into `main` as `6c84c42cce4e0b1ec0d05a9326cbef59d9c68452`. Its post-merge CI run [41070128095](https://github.com/HealthCarefund/carefund-platform/actions/runs/41070128095) passed the three required checks: Contracts (Rust/Soroban), API (Go), and Web (Next.js). The separate Docs workflow is path-triggered and verifies mdBook and offline links when documentation changes.
 
-The PR #44 source changes are not a new deployment. They harden the off-chain reconciler so authoritative chain reads must succeed before an event is stored or its cursor advances, and they add paginated event processing and retention-gap handling. The historical Block 3B Testnet contracts and their release artifacts remain unchanged.
+The reconciliation hardening has a documented lineage: PR #42 added event pagination, cursor safety and retention-gap protection; PR #43 added auditable operator recovery tooling; and PR #44 made authoritative agreement, provider and attester state reads mandatory before event reconciliation can be checkpointed. These are Go API changes, not functions deployed inside the Soroban contracts. Current Soroban source also contains contract improvements such as `transfer_admin` and the attestation-time authorization check that are absent from the historical deployed WASM. The historical Block 3B Testnet contracts and their release artifacts remain unchanged, and their transactions remain valid evidence for that earlier deployed version.
 
 ## Release
 
@@ -108,10 +108,11 @@ The PR #44 source changes are not a new deployment. They harden the off-chain re
 
 ## Deployment and verification boundaries
 
-- **Current source**: `main` includes PR #44's API reconciliation hardening and tests. These source changes are not deployed to the historical Testnet contract instances.
+- **Current source**: `main` includes current Soroban contract improvements and the PR #42–#44 Go API reconciliation changes. The Soroban improvements are not present in the historical deployed WASM; the Go changes are off-chain API behavior, not smart-contract functions.
 - **Local verification**: The web application runs at `http://localhost:3000`, the Go API at `http://localhost:8080`, and PostgreSQL through Docker (`postgres:18.6-bookworm` on port 5439).
-- **Historical external deployment**: The Block 3B contract instances and lifecycle transactions are live on Stellar Testnet as recorded in the evidence files. They predate the current source-only attestation and reconciliation improvements.
+- **Historical external deployment**: The Block 3B contract instances and lifecycle transactions are live on Stellar Testnet as recorded in the evidence files. They predate the current source-only contract improvements and reconciliation changes; those historical transactions remain evidence for the earlier deployed version.
 - **Public documentation**: Available through GitHub Pages at `https://healthcarefund.github.io/carefund-platform/`.
+- **Public deployment boundary**: No public API or web application deployment is claimed; only the documentation site is public.
 - **Not deployed or verified**: No Vercel deployment, Mainnet deployment, additional contract deployment, or production clinical deployment is claimed.
 
 ## Known Limitations

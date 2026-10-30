@@ -18,7 +18,7 @@ Little in the contract mechanics. The healthcare-specific parts are the vocabula
 
 ## Who confirms care was delivered?
 
-An attester: an address the admin registered in `provider-registry` and bound to one provider, named in the agreement at creation. Only that address can call `attest_care`. Calling it records an on-chain statement. It does not prove the treatment happened. The registry records an administrator's decision and an opaque credential reference, not verified accreditation or independence, and the contract does not stop the attester, provider or sponsor being the same address.
+An attester: an address the admin registered in `provider-registry` and bound to one provider, named in the agreement at creation. Only that address can call `attest_care`. In the current `care-agreement` source, `attest_care` also reads the attester's current registry record and requires `Active` status and the provider binding; an accepted attestation is not retroactively invalidated after a later suspension or revocation. That attestation-time check is absent from the historical Testnet WASM. Calling it records an on-chain statement. It does not prove the treatment happened. The registry records an administrator's decision and an opaque credential reference, not verified accreditation or independence, and the contract does not stop the attester, provider or sponsor being the same address.
 
 ## What happens if the attester lies?
 
@@ -26,7 +26,7 @@ The agreement moves to `CareConfirmed`. The sponsor can open a dispute only betw
 
 ## Can an administrator redirect funds?
 
-Not to an arbitrary address and not in arbitrary amounts. The only function that moves funds at admin discretion is `resolve_dispute`, and only on a `Disputed` agreement. Its transfers go to the agreement's own provider or sponsor in amounts fixed at creation. The admin cannot sweep, pause or upgrade (no such functions exist). The admin can, however, choose whether the provider or the sponsor gets the money in any dispute, with no timeout and no key rotation. See [ARCHITECTURE.md section 5](../ARCHITECTURE.md#5-admin-and-upgrade-surface).
+Not to an arbitrary address and not in arbitrary amounts. The only function that moves funds at admin discretion is `resolve_dispute`, and only on a `Disputed` agreement. Its transfers go to the agreement's own provider or sponsor in amounts fixed at creation. The admin cannot sweep, pause or upgrade (no such functions exist). The admin can, however, choose whether the provider or the sponsor gets the money in any dispute, with no timeout. The current source has `transfer_admin` in both contracts, but rotation requires authorization from the current and incoming administrators, cannot recover an already lost key, and is absent from the historical Testnet WASM. See [ARCHITECTURE.md section 5](../ARCHITECTURE.md#5-admin-and-upgrade-surface).
 
 ## What happens if the provider never delivers?
 
@@ -36,7 +36,7 @@ If no attestation is made by `care_deadline`, the agreement stays `Funded`. Afte
 
 Yes, in these cases:
 
-- An agreement in `Disputed` stays that way until the admin resolves it. A lost key locks those funds. The current source adds `transfer_admin`, which lets a working admin hand the role over, but it needs the current admin's signature, so it does not help after a loss, and it is not in the deployed Testnet contracts.
+- An agreement in `Disputed` stays that way until the admin resolves it. A lost key locks those funds. The current source has `transfer_admin` in both contracts, which lets a working admin hand the role over, but it needs the current admin's signature, so it does not help after a loss, and it is not in the deployed Testnet contracts.
 - Tokens sent directly to the contract address cannot be recovered; there is no sweep.
 - For non-native assets, a payout could fail if a trustline is missing or an issuer freezes or claws back. This is reasoning from Stellar asset rules, not tested here.
 
@@ -60,7 +60,7 @@ For fund safety, yes. The contracts do not call the API or database, and every t
 
 ## How is the off-chain database reconciled?
 
-A background loop in the API process looks up pending transaction hashes and reads contract events from a persisted Soroban RPC cursor, upserting the referenced agreement, provider or attester from authoritative chain state before storing each event. A failed authoritative read, event write, or cursor write leaves that event uncheckpointed, so a stale PostgreSQL row cannot advance reconciliation. PR #44 also added bounded pagination and cursor validation. Chain state wins. Agreement #7 was missed by an earlier version of this loop, then recovered by replay from ledger 5106190 ([evidence section 8.2](../evidence/testnet-2026-10-09-block3b.md)). If the RPC has pruned the cursor's history, the reconciler records a durable retention gap and requires explicit operator acknowledgement; it cannot recreate missing historical events.
+A background loop in the API process looks up pending transaction hashes and reads contract events from a persisted Soroban RPC cursor, upserting the referenced agreement, provider or attester from authoritative chain state before storing each event. A failed authoritative read, event write, or cursor write leaves that event uncheckpointed, so a stale PostgreSQL row cannot advance reconciliation. PR #42 added bounded event pagination, cursor safety and retention-gap protection; PR #43 added auditable operator recovery tooling; PR #44 added the mandatory authoritative state reads before event reconciliation can be checkpointed. These are current Go API changes, not functions deployed inside the historical Testnet contracts. Chain state wins. Agreement #7 was missed by an earlier version of this loop, then recovered by replay from ledger 5106190 ([evidence section 8.2](../evidence/testnet-2026-10-09-block3b.md)). If the RPC has pruned the cursor's history, the reconciler records a durable retention gap and requires explicit operator acknowledgement; it cannot recreate missing historical events.
 
 ## Is the application publicly deployed?
 
@@ -82,11 +82,11 @@ Working and evidenced:
 - Agreement #8 created, funded, attested and then settled by a third-party account through the browser with Freighter, with 8,000,000 stroops to the provider and 2,000,000 returned to the sponsor.
 - A signature-rejection case that submitted nothing.
 - Go API with idempotency and reconciliation, TypeScript SDK, Next.js app.
-- 178 contract tests locally (135 care-agreement and 43 provider-registry), 57 Go API tests, 176 TypeScript unit tests (39 types, 116 SDK and 21 web), and 19 Playwright E2E tests. The attestation-time authorization tests and the PR #44 reconciliation hardening run against current source only; the historical Testnet deployment predates those changes.
+- 178 contract tests locally (135 care-agreement and 43 provider-registry), 57 passing Go test results (52 top-level tests and 5 named subtests from `go test -race -p 1 ./...`), 176 TypeScript unit tests (39 types, 116 SDK and 21 web), and 19 Playwright E2E tests. The attestation-time authorization and reconciliation hardening run against current source only; the historical Testnet deployment predates those changes.
 
 Planned, not implemented (open GitHub issues #21 to #28): provider discovery for sponsor intents, reconciliation metrics, dead-letter handling, an authenticated admin workflow for dispute resolution, SDK retry helpers, a manual accessibility review, passkey signing, and an interactive playground.
 
-Not planned or not addressed anywhere: a dispute timeout or lost-key recovery (admin rotation exists in source only; see [the recovery proposal](../docs/dispute-recovery-proposal.md)), rechecking attester status after creation, milestones, and multi-attester thresholds (the last is listed as post-approval ideas in [ROADMAP.md](../ROADMAP.md)).
+Not planned or not addressed anywhere: a dispute timeout or recovery after the administrator key is already lost (the current source's `transfer_admin` requires the current administrator and cannot recover a lost key; see [the recovery proposal](../docs/dispute-recovery-proposal.md)), retroactive invalidation of an accepted attestation after later registry changes, milestones, and multi-attester thresholds (the last is listed as post-approval ideas in [ROADMAP.md](../ROADMAP.md)).
 
 ## Is there a demo video?
 

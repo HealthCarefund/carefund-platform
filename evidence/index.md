@@ -58,7 +58,7 @@ and something outside this session's control prevents verification).
 | Administrator rotation (`transfer_admin`) merged to main | PR #39 merge commit `ca5fee3d6117abc61b5c0ff315ee74639d0ee149`; both contracts require current- and incoming-admin authorization; 124 + 38 local tests pass; 4 required CI checks pass on head `ca886f7b` | 2026-10-28 | VERIFIED |
 | 2-of-3 multisignature admin: real-signature authorization | `evidence/multisig-admin-verification-2026-10-28.md`; 16 tests across both contracts using genuine Ed25519 signatures checked by `soroban-env-host`'s real account-authentication path, not `mock_auths()` | 2026-10-28 | TESTED LOCALLY |
 | 2-of-3 multisignature admin: live network / classic `SetOptions` behavior | Not exercised — local Docker image pull for a standalone network stalled in this environment, and a fresh Testnet deployment was out of scope; see limitation in `evidence/multisig-admin-verification-2026-10-28.md` section 5 | 2026-10-28 | BLOCKED |
-| PR #44 authoritative reconciliation checkpoint | `6c84c42cce4e0b1ec0d05a9326cbef59d9c68452` merged PR #44; current source requires authoritative agreement/provider/attester reads before event checkpointing and validates paginated event cursors; [post-merge CI](https://github.com/HealthCarefund/carefund-platform/actions/runs/41070128095) passed | 2026-10-30 | TESTED LOCALLY |
+| Reconciliation hardening lineage (PRs #42–#44) | PR #42 (`8d2380e5f746b3fadbd457132abe122b63ca329a`) added event pagination, cursor safety and retention-gap protection; PR #43 (`1097ed1a651019f7836e4814f1df347a75e99dc8`) added auditable operator recovery tooling; PR #44 (`6c84c42cce4e0b1ec0d05a9326cbef59d9c68452`) made authoritative agreement/provider/attester reads mandatory before event reconciliation can be checkpointed. These are Go API changes, not functions deployed inside the historical Testnet contracts; [post-merge CI](https://github.com/HealthCarefund/carefund-platform/actions/runs/41070128095) passed | 2026-10-30 | TESTED LOCALLY |
 | Clean-clone local startup | [Clean-clone verification record](./clean-clone-2026-10-30.md): isolated PostgreSQL, sourced API environment, API health/readiness, and web startup were checked from a fresh checkout | 2026-10-30 | TESTED LOCALLY |
 
 ## Current verification snapshot
@@ -66,6 +66,6 @@ and something outside this session's control prevents verification).
 These totals were rerun against the post-PR #44 source baseline:
 
 - Rust contracts: 178 tests (`care-agreement` 135, `provider-registry` 43).
-- Go API: 57 tests across 13 packages, including the serialized race suite.
+- Go API: 57 passing test results across 13 packages (`go test -race -p 1 ./...`: 52 top-level tests plus 5 named subtests, including the serialized race suite).
 - TypeScript: 176 unit tests (`types` 39, SDK 116, web 21).
 - Playwright E2E: 19 tests in the passing Web CI job.
