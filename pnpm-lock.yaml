@@ -175,8 +175,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/types
       '@stellar/stellar-sdk':
-        specifier: 17.1.0
-        version: 17.1.0(debug@4.4.3)
+        specifier: 17.2.1
+        version: 17.2.1(debug@4.4.3)
       next:
         specifier: 16.3.8
         version: 16.3.8(@babel/core@7.29.7)(@playwright/test@1.63.0)(@types/node@26.6.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -249,8 +249,8 @@ importers:
         specifier: 6.0.1
         version: 6.0.1
       '@stellar/stellar-sdk':
-        specifier: 17.1.0
-        version: 17.1.0(debug@4.4.3)
+        specifier: 17.2.1
+        version: 17.2.1(debug@4.4.3)
       buffer:
         specifier: 6.0.3
         version: 6.0.3
@@ -265,8 +265,8 @@ importers:
   packages/sdk/generated/care-agreement:
     dependencies:
       '@stellar/stellar-sdk':
-        specifier: 17.1.0
-        version: 17.1.0(debug@4.4.3)
+        specifier: 17.2.1
+        version: 17.2.1(debug@4.4.3)
       buffer:
         specifier: 6.0.3
         version: 6.0.3
@@ -278,8 +278,8 @@ importers:
   packages/sdk/generated/provider-registry:
     dependencies:
       '@stellar/stellar-sdk':
-        specifier: 17.1.0
-        version: 17.1.0(debug@4.4.3)
+        specifier: 17.2.1
+        version: 17.2.1(debug@4.4.3)
       buffer:
         specifier: 6.0.3
         version: 6.0.3
@@ -850,8 +850,8 @@ packages:
     resolution: {integrity: sha512-HBDNKnxr+ecdaEmbZ0mcKkirOF8tXXEbWSw34P3wT40Tn3g+u+cCH17xAWZymzscq8cojHB8340pR8QNVaD32w==}
     engines: {node: '>=22.0.0', pnpm: '>=10.0.0'}
 
-  '@stellar/stellar-sdk@17.1.0':
-    resolution: {integrity: sha512-vf/d9KR2B7MkrJBKW+cN8GPgBbiLFrRfr2pkR41VmqI6is6EfYvzhyGztbuJ3XPmcotkCRCveweAAzw2cjDn1w==}
+  '@stellar/stellar-sdk@17.2.1':
+    resolution: {integrity: sha512-kIyfnZ2zCOqV8SUJcsk9buBOvhH1wsLU7KAzqAJyY7AgmD+KdvLTMpI1gcYdhGSakuDG5s6xSO4EN9HZTxpm8g==}
     engines: {node: '>=22.12.0'}
     hasBin: true
 
@@ -3149,7 +3149,7 @@ snapshots:
 
   '@stellar/js-xdr@5.0.0': {}
 
-  '@stellar/stellar-sdk@17.1.0(debug@4.4.3)':
+  '@stellar/stellar-sdk@17.2.1(debug@4.4.3)':
     dependencies:
       '@exodus/bytes': 1.16.0(@noble/hashes@2.4.0)
       '@noble/ed25519': 3.2.0
