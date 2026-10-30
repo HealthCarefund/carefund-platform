@@ -111,7 +111,7 @@ Caveat: the pooled balance can exceed the sum of open escrows if someone sends t
 ## 9. API and browser trust boundaries
 
 - The API has no authentication and no rate limiting. A request for the wrong wallet fails a convenience check, and would fail on-chain anyway because only the right key can sign.
-- The API builds unsigned transactions for seven operations. The browser parses the XDR and hands it to Freighter; from reading `apps/web/lib/use-transaction-flow.ts` I found no independent check that the transaction matches the requested operation. The user's protection is Freighter's prompt. This is inferred from the code and was not tested as an attack.
+- The API builds unsigned transactions for seven operations. Before any browser wallet-signing call, `apps/web/lib/use-transaction-flow.ts` checks the network passphrase and parses the XDR, then `packages/sdk/src/transaction/validate.ts` checks the transaction source, target contract, requested operation, arguments, constraints, and Soroban authorization tree. For funding, the expected transfer amount is fetched from the agreement on-chain. Failed validation stops the signing path. This current-source protection was added in PR #41 and covered by local tests; it is not a new live Testnet transaction or protection against a compromised browser, RPC, or wallet extension.
 - `create_agreement` is built in the browser, not by the API.
 - The browser submits directly to Soroban RPC.
 - Request logging records method, path, status and duration only ([SECURITY.md](../SECURITY.md)).
@@ -142,7 +142,7 @@ Caveat: the pooled balance can exceed the sum of open escrows if someone sends t
 4. The admin alone decides disputes. Making the admin a multisignature account (verified with real signatures locally; see [multisig admin verification](../evidence/multisig-admin-verification-2026-10-28.md)) protects against losing one of several signing keys, but does not change this: any signer subset meeting the threshold decides disputes exactly as a single admin key would, and colluding signers at or above the threshold are equivalent to a dishonest admin.
 5. No independence check between attester, provider and sponsor addresses.
 6. Commitment privacy depends entirely on callers.
-7. Browser trust in API-supplied transaction XDR (section 9).
+7. Prepared-XDR validation blocks mismatched transactions before wallet signing, but cannot protect a compromised browser, RPC, or wallet extension (section 9).
 8. Reconciler edge cases: RPC retention loss still requires explicit operator acknowledgement and cannot recreate pruned events. PR #42 added event pagination, cursor safety and retention-gap protection; PR #43 added auditable operator recovery tooling; PR #44 added authoritative state reads before checkpointing. These are current Go API changes, not functions deployed inside the historical Testnet contracts.
 9. No third-party audit; `cargo audit` reports one allowed unmaintained-crate advisory (`paste`), `govulncheck` one non-critical transitive finding, `pnpm audit` two high advisories in optional transitive packages ([SECURITY.md](../SECURITY.md)).
 10. Only native XLM was exercised. Issued assets bring trustline, freeze and clawback considerations that were not tested.

@@ -278,7 +278,7 @@ Remaining reconciliation limitation:
 - The browser submits the signed transaction to Soroban RPC directly. It does not pass through the API.
 - `resolve_dispute` can be prepared by the API but has no web screen, because there is no admin authentication layer. The Testnet resolution (Agreement 4) was done with the Stellar CLI.
 - The API does not authenticate callers. Its wallet-address checks are a convenience; the contract's `require_auth` is the actual boundary.
-- **The browser trusts the API's XDR up to what Freighter shows the user.** In `use-transaction-flow.ts` the prepared XDR is parsed and handed to the wallet; I found no code that re-derives or compares the contract, function and arguments before signing. A compromised or malicious API could return a different transaction, and the user's protection would be reviewing the Freighter prompt. This is an inference from reading that file, not a demonstrated attack. The `create_agreement` path does not have this exposure because it is built client-side.
+- **The browser independently checks API-prepared transaction XDR before wallet signing.** `apps/web/lib/use-transaction-flow.ts` rejects a mismatched network passphrase or malformed/fee-bump envelope, then uses `validateAgreementLifecycleTransaction` in `packages/sdk/src/transaction/validate.ts` to compare the source account, contract, operation, arguments, transaction constraints, and Soroban authorization against the requested action. Funding additionally reads the expected escrow amount from on-chain state. A validation failure stops the signing path. PR #41 added source-level tests in `apps/web/lib/use-transaction-flow.test.ts` and `packages/sdk/src/transaction/validate.test.ts`. These checks do not protect against a fully compromised browser, wallet extension, or RPC, and they do not constitute a new live Testnet demonstration. `create_agreement` is assembled client-side and separately validated.
 - Registry administration (registering providers and attesters) has no application interface. It is done by the admin with the Stellar CLI.
 
 ## 12. Privacy and what the attestation means
@@ -317,7 +317,7 @@ Process and scope:
 
 - No third-party audit. Testnet only. No Mainnet. No public web deployment: the app and API ran on localhost for the recorded verification; only the documentation site is public.
 - The API has no authentication or rate limiting.
-- The browser relies on Freighter to show the right transaction (section 11).
+- The browser checks prepared transaction XDR independently before handing it to Freighter; browser and wallet compromise remain outside this check (section 11).
 - Reconciler recovery limits in section 10.
 - Only native XLM was demonstrated. Other assets are untested.
 
