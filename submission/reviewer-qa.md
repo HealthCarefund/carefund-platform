@@ -60,7 +60,7 @@ For fund safety, yes. The contracts do not call the API or database, and every t
 
 ## How is the off-chain database reconciled?
 
-A background loop in the API process looks up pending transaction hashes and reads contract events from a persisted ledger cursor, upserting the referenced agreement, provider and attester from chain state before storing each event. The cursor advances only if the whole batch was stored. Chain state wins. Agreement #7 was missed by an earlier version of this loop, then recovered by replay from ledger 5106190 ([evidence section 8.2](../evidence/testnet-2026-10-09-block3b.md)). Two possible weaknesses in event retention and pagination are described in [ARCHITECTURE.md section 10](../ARCHITECTURE.md#10-postgresql-as-a-rebuildable-mirror) and were not reproduced.
+A background loop in the API process looks up pending transaction hashes and reads contract events from a persisted Soroban RPC cursor, upserting the referenced agreement, provider or attester from authoritative chain state before storing each event. A failed authoritative read, event write, or cursor write leaves that event uncheckpointed, so a stale PostgreSQL row cannot advance reconciliation. PR #44 also added bounded pagination and cursor validation. Chain state wins. Agreement #7 was missed by an earlier version of this loop, then recovered by replay from ledger 5106190 ([evidence section 8.2](../evidence/testnet-2026-10-09-block3b.md)). If the RPC has pruned the cursor's history, the reconciler records a durable retention gap and requires explicit operator acknowledgement; it cannot recreate missing historical events.
 
 ## Is the application publicly deployed?
 
@@ -82,7 +82,7 @@ Working and evidenced:
 - Agreement #8 created, funded, attested and then settled by a third-party account through the browser with Freighter, with 8,000,000 stroops to the provider and 2,000,000 returned to the sponsor.
 - A signature-rejection case that submitted nothing.
 - Go API with idempotency and reconciliation, TypeScript SDK, Next.js app.
-- 133 contract tests locally (106 and 27). The 16 attestation-time authorization tests run against current source only; the Testnet deployment predates that change.
+- 178 contract tests locally (135 care-agreement and 43 provider-registry), 57 Go API tests, 176 TypeScript unit tests (39 types, 116 SDK and 21 web), and 19 Playwright E2E tests. The attestation-time authorization tests and the PR #44 reconciliation hardening run against current source only; the historical Testnet deployment predates those changes.
 
 Planned, not implemented (open GitHub issues #21 to #28): provider discovery for sponsor intents, reconciliation metrics, dead-letter handling, an authenticated admin workflow for dispute resolution, SDK retry helpers, a manual accessibility review, passkey signing, and an interactive playground.
 

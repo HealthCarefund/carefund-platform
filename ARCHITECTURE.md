@@ -1,6 +1,6 @@
 # CareFund Architecture
 
-This document describes the system as implemented at the commit it was written against. It does not describe planned features. Where a statement is a design judgment or inference rather than something the code or evidence shows, it says so.
+This document describes the current repository source, including the reconciliation hardening merged in PR #44 (`6c84c42cce4e0b1ec0d05a9326cbef59d9c68452`). It does not describe planned features. Historical Testnet statements are marked as such, because the deployed Block 3B contracts predate later source-only changes. Where a statement is a design judgment or inference rather than something the code or evidence shows, it says so.
 
 Every function and state name below was checked against `contracts/care-agreement/src/lib.rs` and `contracts/provider-registry/src/lib.rs`. Line references are to those files at this commit.
 
@@ -259,15 +259,15 @@ The mirror can be discarded and rebuilt from chain state. The caveats are that a
 ### Reconciliation, idempotency and recovery
 
 - **Transactions**: `reconcileTransactions` looks up each pending hash and records `confirmed` or `failed` from `getTransaction`. Not-found leaves the status unchanged.
-- **Events**: `reconcileEvents` reads contract events from a persisted ledger cursor and inserts them with a uniqueness constraint on (contract, tx hash, event index), so overlapping ranges do not duplicate.
-- **Entity-first ingestion**: after the Agreement #7 defect, `storeEvent` fetches and upserts the referenced agreement, provider and attester from chain state before inserting the event. The cursor advances only if every event in the batch was stored (`allSuccessful`). Replay from ledger 5106190 recovered Agreement #7 without manual SQL ([evidence](./evidence/testnet-2026-10-09-block3b.md), section 8.2).
+- **Events**: `reconcileEvents` reads contract events from a persisted Soroban RPC cursor, follows bounded pages, validates cursor continuity, and inserts events with a uniqueness constraint on (contract, tx hash, event index), so overlapping ranges do not duplicate.
+- **Entity-first ingestion**: `storeEvent` fetches and upserts the referenced agreement, provider or attester from authoritative chain state before inserting the event. If that read, the event write, or the cursor write fails, the event is not treated as reconciled and the cursor does not move past it. This prevents a stale PostgreSQL row from allowing a checkpoint to advance. Replay from ledger 5106190 recovered Agreement #7 without manual SQL ([evidence](./evidence/testnet-2026-10-09-block3b.md), section 8.2).
+- **PR #44 hardening**: the source now rejects failed authoritative reads for all three mirrored entity types, walks paginated event responses instead of assuming one page, and stops safely when a page is malformed or incomplete. These changes are covered by the reconciliation tests and are source/CI verified only; they have not been deployed to the historical Testnet contracts.
 - **Read-through**: when the API is asked for an agreement the mirror lacks, it fetches it from chain (`fetchOnChainAgreement`).
 - **Idempotency**: mutating API calls require an `Idempotency-Key`. The same key and request replays the stored response, the same key with a different request returns 409, and concurrent duplicates are not both executed. Records are in PostgreSQL so they survive restarts. Tests: [evidence/recovery-2026-09-27.md](./evidence/recovery-2026-09-27.md).
 
-Limits found while reading the code (not exercised by tests):
+Remaining reconciliation limitation:
 
-- `reconcileEvents` has a comment saying the cursor is reset when `getEvents` fails because the start ledger fell out of RPC retention, but the code only logs a warning and returns, and a stored cursor is always preferred. After an outage longer than the RPC retention window the reconciler may keep failing until the cursor is changed by hand. This is an unverified reading of the code, not a reproduced failure.
-- The `getEvents` request sets no pagination and the cursor advances to `LatestLedger + 1`. If a single request returns a truncated page, later events in the range might be skipped. Also unverified. The read-through fetch limits the user-visible effect, because an agreement is mirrored when requested.
+- If the persisted event cursor falls behind the RPC retention window, the reconciler records a durable retention-gap record and blocks until an operator explicitly acknowledges the loss. A later state read can restore an entity's current mirror, but missing historical events cannot be reconstructed from the pruned RPC history. This is an explicit recovery boundary, not an automatic claim that the event sequence was recovered.
 
 ## 11. Wallet signing and key trust boundaries
 
@@ -347,8 +347,8 @@ The deployed care-agreement WASM predates the attestation-time attester check de
 
 | Topic | Source | Tests | Evidence |
 |---|---|---|---|
-| State machine and escrow | `contracts/care-agreement/src/lib.rs` | `contracts/care-agreement/src/test.rs` (90 tests) and `test_attester_authorization.rs` (16 tests) | [Testnet matrix](./evidence/testnet-2026-10-09-block3b.md) |
-| Registry | `contracts/provider-registry/src/lib.rs` | `contracts/provider-registry/src/test.rs` (27 tests) | Same file, section 4 |
+| State machine and escrow | `contracts/care-agreement/src/lib.rs` | `cargo test -p care-agreement` (135 tests across two suites) | [Testnet matrix](./evidence/testnet-2026-10-09-block3b.md) |
+| Registry | `contracts/provider-registry/src/lib.rs` | `cargo test -p provider-registry` (43 tests across two suites) | Same file, section 4 |
 | Transaction pipeline | `packages/sdk/src/transaction/` | `*.test.ts` alongside | Same file, section 8 |
 | API and reconciler | `apps/api/internal/api`, `internal/reconcile` | `*_test.go` alongside | [recovery](./evidence/recovery-2026-09-27.md), Testnet section 6 and 8.2 |
 | Shared types | `packages/types/src/agreement.ts` | `packages/types/src/*.test.ts` | n/a |
