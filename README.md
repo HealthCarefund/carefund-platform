@@ -117,15 +117,19 @@ pnpm install
 ### 3. Configure and Start the Go API
 ```bash
 cp apps/api/.env.example apps/api/.env
+set -a
+source apps/api/.env
+set +a
 cd apps/api && go run ./cmd/api
 ```
-The API listens at `http://localhost:8080`.
+The Go entry point reads process environment variables with `os.LookupEnv`; it does not load `.env` files by itself. The `source` step is therefore required in each shell that starts the API. The API listens at `http://localhost:8080`.
 
 ### 4. Start the Web Application
 ```bash
+cp apps/web/.env.example apps/web/.env.local
 pnpm --filter @carefund/web run dev
 ```
-The frontend is available at `http://localhost:3000`. Detailed setup and environment documentation is available in the [Documentation Book](https://healthcarefund.github.io/carefund-platform/getting-started.html).
+The frontend is available at `http://localhost:3000`. The checked-in web example contains only public Testnet and localhost values. Detailed setup and environment documentation is available in the [Documentation Book](https://healthcarefund.github.io/carefund-platform/getting-started.html).
 
 ## Testing Strategy
 

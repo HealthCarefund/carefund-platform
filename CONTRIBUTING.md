@@ -46,10 +46,17 @@ Pinned tool versions (documented in `TOOLCHAIN.md`):
 3. Configure the API:
    ```bash
    cp apps/api/.env.example apps/api/.env
+   set -a
+   source apps/api/.env
+   set +a
    ```
+   The Go API reads process environment variables with `os.LookupEnv`; it does not parse `.env` automatically.
 
 4. Configure the web application:
-   Create `apps/web/.env.local` using the public configuration values described in `README.md`.
+   ```bash
+   cp apps/web/.env.example apps/web/.env.local
+   ```
+   The example contains only public Testnet and localhost values.
 
 ## Verification and Testing by Layer
 
