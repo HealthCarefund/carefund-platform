@@ -10,7 +10,9 @@ import (
 	"time"
 
 	protocol "github.com/stellar/go-stellar-sdk/protocols/rpc"
+	"github.com/stellar/go-stellar-sdk/xdr"
 
+	"github.com/HealthCarefund/carefund-platform/apps/api/internal/sorobanenc"
 	"github.com/HealthCarefund/carefund-platform/apps/api/internal/store"
 )
 
@@ -60,12 +62,53 @@ type pagedFakeRPC struct {
 	requests      []protocol.GetEventsRequest
 }
 
+func paginationAgreementSimulation() protocol.SimulateTransactionResponse {
+	sponsor, _ := sorobanenc.Address("GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF")
+	provider, _ := sorobanenc.Address("GBWPJKZC635B4NKCBWBDHE7Z7FTAAJNREF7XWC64OL3X3MJYQGUKI453")
+	attester, _ := sorobanenc.Address("GB677TBBVXGLIFAYVLYZNTP4YHMHSL2OWHAQEUSVQDN4D2JYAWDCPFRT")
+	patientRef, _ := sorobanenc.Bytes32(make32(1))
+	serviceRef, _ := sorobanenc.Bytes32(make32(2))
+	funding, _ := sorobanenc.I128("1000000")
+	settlement, _ := sorobanenc.I128("900000")
+
+	keys := []string{"sponsor", "provider", "attester", "patient_ref_commitment", "service_commitment", "funding_amount", "settlement_amount", "funding_deadline", "care_deadline", "dispute_window_secs", "state"}
+	values := []xdr.ScVal{
+		sponsor,
+		provider,
+		attester,
+		patientRef,
+		serviceRef,
+		funding,
+		settlement,
+		sorobanenc.U64(1_700_000_000),
+		sorobanenc.U64(1_700_100_000),
+		sorobanenc.U64(86_400),
+		sorobanenc.Symbol("Requested"),
+	}
+	entries := make(xdr.ScMap, 0, len(keys))
+	for i, key := range keys {
+		sym := xdr.ScSymbol(key)
+		entries = append(entries, xdr.ScMapEntry{
+			Key: xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &sym},
+			Val: values[i],
+		})
+	}
+	entriesPtr := &entries
+	encoded, err := xdr.MarshalBase64(xdr.ScVal{Type: xdr.ScValTypeScvMap, Map: &entriesPtr})
+	if err != nil {
+		panic(err)
+	}
+	return protocol.SimulateTransactionResponse{
+		Results: []protocol.SimulateHostFunctionResult{{ReturnValueXDR: &encoded}},
+	}
+}
+
 func (p *pagedFakeRPC) GetTransaction(_ context.Context, _ string) (protocol.GetTransactionResponse, error) {
 	return protocol.GetTransactionResponse{}, nil
 }
 
 func (p *pagedFakeRPC) Simulate(_ context.Context, _ string) (protocol.SimulateTransactionResponse, error) {
-	return protocol.SimulateTransactionResponse{}, nil
+	return paginationAgreementSimulation(), nil
 }
 
 func (p *pagedFakeRPC) Health(ctx context.Context) (protocol.GetHealthResponse, error) {
