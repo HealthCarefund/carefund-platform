@@ -182,4 +182,4 @@ Not in the matrix because no evidence exists: independent audit, attester truthf
 
 ## 14. Test totals
 
-Counts come from `cargo test`: 106 in care-agreement (90 in `test.rs` and 16 in `test_attester_authorization.rs`) and 27 in provider-registry (133 total). The 117 reported in [submission/submission-pack.md](../submission/submission-pack.md) predates the attestation-time authorization tests. The Go, TypeScript and Playwright totals in that pack are as reported there and were not re-run for this document; see the PR description for what was run.
+Current counts were rerun against the post-PR #44 source baseline: 135 care-agreement tests, 43 provider-registry tests (178 Rust tests total), 57 Go API tests, 176 TypeScript unit tests (39 types, 116 SDK and 21 web), and 19 Playwright E2E tests. The attestation-time authorization and reconciliation tests are current-source coverage; the historical Block 3B Testnet deployment predates those source changes. The current CI reference is [post-merge run 41070128095](https://github.com/HealthCarefund/carefund-platform/actions/runs/41070128095).
