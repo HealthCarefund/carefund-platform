@@ -124,7 +124,7 @@ Both contracts have `transfer_admin(new_admin)`. It requires authorization from 
 
 The two contracts keep separate admins, so rotating one does not change the other.
 
-Rotation is a handover tool, not recovery. It needs the current admin's signature, so it cannot help once that key is lost. See section 14 and [docs/dispute-recovery-proposal.md](./docs/dispute-recovery-proposal.md). `transfer_admin` is in the source and tested locally only. It is not in the deployed Testnet contracts (care_agreement WASM `b543e9a7...`, provider_registry WASM `30924b09...`), which have no admin rotation, so the deployed admins cannot use it.
+Rotation is a handover tool, not recovery. It needs the current admin's signature, so it cannot help once that key is lost. See section 14 and [docs/dispute-recovery-proposal.md](./docs/dispute-recovery-proposal.md). `transfer_admin` is in the source and tested locally only. It is not in the deployed Testnet contracts (care_agreement WASM `b543e9a7...`, provider_registry WASM `30924b0d...`), which have no admin rotation, so the deployed admins cannot use it.
 
 ## 6. Agreement state machine
 
