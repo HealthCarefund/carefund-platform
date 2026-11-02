@@ -15,7 +15,7 @@ soroban-sdk = { version = "29.0.1", features = ["testutils"] }
 provider-registry = { path = "../provider-registry", features = ["testutils"] }
 ed25519-dalek = "2.2.0"
 sha2 = "0.10.9"
-rand = "0.8.8"
+rand = "0.10.3"
 
 [features]
 testutils = ["soroban-sdk/testutils"]
